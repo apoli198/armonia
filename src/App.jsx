@@ -643,9 +643,13 @@ function ProfileTab({ skinColor, setSkinColor, eyeColor, setEyeColor, hairColor,
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {season.palette.slice(0, 6).map((c, i) => (
-            <div key={i} style={{ flex: 1, height: 28, borderRadius: 6, background: c, border: '1px solid rgba(0,0,0,0.08)' }} />
-          ))}
+          {(() => {
+            const profile = analyzeProfile(skinColor, eyeColor, hairColor);
+            const pool = buildPool('analog', skinColor, profile);
+            return pool.slice(0, 6).map((c, i) => (
+              <div key={i} style={{ flex: 1, height: 28, borderRadius: 6, background: c, border: '1px solid rgba(0,0,0,0.08)' }} />
+            ));
+          })()}
         </div>
       </div>
 
@@ -920,20 +924,29 @@ export default function App() {
     { id: 'results', label: 'Outfit', Icon: LayoutGrid },
   ];
 
-  return (
-    <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: '#faf8f2', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ padding: '1.25rem 1.25rem 0', background: '#faf8f2' }}>
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, fontWeight: 700, color: '#1a1208', letterSpacing: '-0.02em' }}>
-          Color Harmony
-        </div>
-        <div style={{ fontSize: 11, color: '#aaa', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 1 }}>
-          Armocromia · Stagione {season.name}
-        </div>
-      </div>
+  // Bottom nav height: 56px buttons + safe area inset
+  const NAV_HEIGHT = 'calc(56px + env(safe-area-inset-bottom))';
 
-      {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+  return (
+    <div style={{ maxWidth: 480, margin: '0 auto', height: '100dvh', background: '#faf8f2', position: 'relative', overflow: 'hidden' }}>
+
+      {/* Scrollable content — padded top for header, bottom for fixed nav */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        paddingBottom: NAV_HEIGHT,
+      }}>
+        {/* Header */}
+        <div style={{ padding: '1.25rem 1.25rem 0', background: '#faf8f2' }}>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, fontWeight: 700, color: '#1a1208', letterSpacing: '-0.02em' }}>
+            Color Harmony
+          </div>
+          <div style={{ fontSize: 11, color: '#aaa', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 1 }}>
+            Armocromia · {season.name}
+          </div>
+        </div>
+
         {tab === 'profile' && (
           <ProfileTab
             skinColor={skinColor} setSkinColor={setSkinColor}
@@ -957,10 +970,14 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom nav */}
+      {/* Bottom nav — fixed to bottom, always visible */}
       <div style={{
-        display: 'flex', borderTop: '1px solid #ece9e0', background: '#fff',
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        display: 'flex',
+        borderTop: '1px solid #ece9e0',
+        background: '#fff',
         paddingBottom: 'env(safe-area-inset-bottom)',
+        zIndex: 100,
       }}>
         {TABS.map(({ id, label, Icon }) => (
           <button key={id} onClick={() => setTab(id)}
@@ -975,6 +992,8 @@ export default function App() {
           </button>
         ))}
       </div>
+
     </div>
   );
 }
+
