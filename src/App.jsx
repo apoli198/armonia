@@ -46,40 +46,184 @@ function contrastColor(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 128 ? '#1a1208' : '#faf8f0';
 }
 
-// ─── Season detection ─────────────────────────────────────────────────────────
+// ─── Skin undertone (primary anchor) ─────────────────────────────────────────
+// Uses raw RGB channels of skin: warm undertones have R > B,
+// cool undertones have B >= R. Neutral is within a small threshold.
+// This is grounded in how melanin, haemoglobin and carotenoids
+// affect skin reflectance.
+
+function skinUndertone(skinHex) {
+  const r = parseInt(skinHex.slice(1, 3), 16);
+  const g = parseInt(skinHex.slice(3, 5), 16);
+  const b = parseInt(skinHex.slice(5, 7), 16);
+  const diff = r - b;
+  if (diff > 20) return 'warm';
+  if (diff < -5) return 'cool';
+  return 'neutral';
+}
+
+// ─── Profile analysis ─────────────────────────────────────────────────────────
+// Skin is the primary anchor. Eyes and hair are secondary validators
+// that refine depth and clarity — they do not override skin undertone.
+
+function analyzeProfile(skin, eyes, hair) {
+  const undertone = skinUndertone(skin);
+
+  const [, , lS] = hexToHsl(skin);
+  const [, sE, lE] = hexToHsl(eyes);
+  const [, sH, lH] = hexToHsl(hair);
+
+  // Depth: driven by skin luminosity (primary), confirmed by hair
+  const skinDepth = lS < 55 ? 'deep' : 'light';
+  const hairDepth = lH < 40 ? 'deep' : 'light';
+  const depth = skinDepth === 'deep' || hairDepth === 'deep' ? 'deep' : 'light';
+
+  // Clarity: high contrast between skin and hair = clear; low = soft/muted
+  const contrast = Math.abs(lS - lH);
+  const avgSat = (sE + sH) / 2; // skin sat is unreliable as anchor for clarity
+  const clarity = contrast > 28 || avgSat > 35 ? 'clear' : 'soft';
+
+  return { undertone, depth, clarity };
+}
+
+// ─── Season label (12 seasons, purely cosmetic) ───────────────────────────────
+// Maps the 3 axes (undertone × depth × clarity) to the 12-season system.
+// This label is shown to the user but does NOT drive color generation.
+
+const SEASON_META = {
+  // SPRING family (warm + light)
+  'warm-light-clear': { name: 'Primavera Chiara',    emoji: '🌸', bg: '#FFF8F0', card: '#FEF3E8', text: '#7A3D1A', desc: 'Calda, luminosa e vivace' },
+  'warm-light-soft':  { name: 'Primavera Delicata',  emoji: '🌷', bg: '#FFF5EC', card: '#FDEEE0', text: '#8B4515', desc: 'Calda, luminosa e soffusa' },
+  // AUTUMN family (warm + deep)
+  'warm-deep-clear':  { name: 'Autunno Caldo',       emoji: '🍂', bg: '#FDF5EC', card: '#F8EDD8', text: '#5A2D0C', desc: 'Caldo, profondo e intenso' },
+  'warm-deep-soft':   { name: 'Autunno Morbido',     emoji: '🍁', bg: '#FBF0E4', card: '#F5E6D0', text: '#6B3510', desc: 'Caldo, profondo e morbido' },
+  // SUMMER family (cool + light)
+  'cool-light-soft':  { name: 'Estate Soffusa',      emoji: '🌅', bg: '#F4F0F8', card: '#EDE8F5', text: '#3A3860', desc: 'Fredda, chiara e polverosa' },
+  'cool-light-clear': { name: 'Estate Chiara',       emoji: '☀️', bg: '#EEF2FA', card: '#E4ECFA', text: '#2A3870', desc: 'Fredda, chiara e nitida' },
+  // WINTER family (cool + deep)
+  'cool-deep-clear':  { name: 'Inverno Freddo',      emoji: '❄️', bg: '#F0EEF8', card: '#E8E4F4', text: '#1A1840', desc: 'Freddo, profondo e contrastato' },
+  'cool-deep-soft':   { name: 'Inverno Morbido',     emoji: '🌨️', bg: '#EEF0F8', card: '#E5E8F5', text: '#252550', desc: 'Freddo, profondo e smorzato' },
+  // NEUTRAL warm
+  'neutral-light-clear': { name: 'Neutro Luminoso',  emoji: '✨', bg: '#FAF8F0', card: '#F5F0E4', text: '#5A4820', desc: 'Neutro, luminoso e polivalente' },
+  'neutral-light-soft':  { name: 'Neutro Soffuso',   emoji: '🌿', bg: '#F8F6EE', card: '#F2EEE2', text: '#60503A', desc: 'Neutro, chiaro e armonioso' },
+  'neutral-deep-clear':  { name: 'Neutro Profondo',  emoji: '🪨', bg: '#F2F0E8', card: '#EAE8DC', text: '#3A3020', desc: 'Neutro, profondo e deciso' },
+  'neutral-deep-soft':   { name: 'Neutro Morbido',   emoji: '🤎', bg: '#F5F2EA', card: '#EEE9DC', text: '#504030', desc: 'Neutro, profondo e smorzato' },
+};
 
 function detectSeason(skin, eyes, hair) {
-  const [hS, sS, lS] = hexToHsl(skin);
-  const [hH, sH, lH] = hexToHsl(hair);
-  const warmSkin = (hS > 10 && hS < 60) || sS < 15;
-  const warmHair = (hH > 15 && hH < 55);
-  const lightHair = lH > 45;
-  const deepSkin = lS < 55;
+  const { undertone, depth, clarity } = analyzeProfile(skin, eyes, hair);
+  const key = `${undertone}-${depth}-${clarity}`;
+  const meta = SEASON_META[key] || SEASON_META['neutral-light-soft'];
+  return { ...meta, undertone, depth, clarity };
+}
 
-  if (warmHair && lightHair) return {
-    name: "Primavera", emoji: "🌸",
-    palette: ['#F4C89A','#E8A87C','#D4845C','#9DC88D','#7BB5A0','#F0E0A0','#C4956A','#E8C5A0'],
-    accent: '#E8A87C', bg: '#FFF8F0', card: '#FEF3E8', text: '#7A3D1A',
-    desc: "Toni caldi, dorati e luminosi"
-  };
-  if (!warmHair && lightHair) return {
-    name: "Estate", emoji: "☀️",
-    palette: ['#C5CAD8','#9BA8C0','#BBA8C8','#D4B8C8','#A0B8C8','#E8D8E0','#8898B0','#C8B0C0'],
-    accent: '#9BA8C0', bg: '#F4F0F8', card: '#EDE8F5', text: '#3A3860',
-    desc: "Toni freddi, polverosi e delicati"
-  };
-  if (warmHair && !lightHair) return {
-    name: "Autunno", emoji: "🍂",
-    palette: ['#8B4513','#A0522D','#CD853F','#6B8E23','#8B6914','#C09050','#7A5C3A','#9B7040'],
-    accent: '#CD853F', bg: '#FDF5EC', card: '#F8EDD8', text: '#5A2D0C',
-    desc: "Toni caldi, profondi e terrosi"
-  };
-  return {
-    name: "Inverno", emoji: "❄️",
-    palette: ['#1C2040','#8B1A2C','#2A4080','#4A3060','#C0B8C8','#E8E0F0','#A0A8C0','#202840'],
-    accent: '#8B1A2C', bg: '#F0EEF8', card: '#E8E4F4', text: '#1A1840',
-    desc: "Toni freddi, netti e contrastati"
-  };
+// ─── Harmony generation (skin-anchored) ──────────────────────────────────────
+// The skin color is the true anchor. All palettes are generated relative
+// to it, then adjusted for warm/cool undertone and depth.
+
+function buildPool(type, skinHex, profile) {
+  const [bH, bS, bL] = hexToHsl(skinHex);
+
+  // Undertone shift: warm skins look best with slightly yellow-shifted hues,
+  // cool skins with slightly blue-shifted hues.
+  const hShift = profile.undertone === 'warm' ? 10 : profile.undertone === 'cool' ? -10 : 0;
+
+  // Depth clamp: deep profiles use darker lightness range, light profiles lighter.
+  const lMin = profile.depth === 'deep' ? 15 : 30;
+  const lMax = profile.depth === 'deep' ? 65 : 85;
+  const clampL = l => Math.max(lMin, Math.min(lMax, l));
+
+  // Saturation scale: clear profiles can take more saturation, soft less.
+  const satScale = profile.clarity === 'clear' ? 1.0 : 0.65;
+
+  const H = bH + hShift; // anchor hue adjusted for undertone
+  const S = bS * satScale;
+  const L = clampL(bL);
+
+  switch (type) {
+    case 'mono':
+      // Monochromatic: 7 lightness steps from the anchor hue
+      return Array.from({ length: 7 }, (_, i) =>
+        hslToHex(H, S * 0.9, clampL(lMin + i * ((lMax - lMin) / 6)))
+      );
+
+    case 'analog':
+      // Analogous: ±30° and ±60° from anchor, respecting undertone shift
+      return [-60, -30, -15, 0, 15, 30, 60].map(d =>
+        hslToHex(H + d, S * 0.88, L)
+      );
+
+    case 'comp':
+      // Complementary: anchor side + opposite side (180°)
+      return [
+        ...[-10, 0, 10].map(d => hslToHex(H + d, S, clampL(L + 5))),
+        ...[-10, 0, 10].map(d => hslToHex(H + 180 + d, S * 0.85, L)),
+        hslToHex(H, S * 0.25, clampL(lMax)),   // near-neutral light
+        hslToHex(H, S * 0.25, clampL(lMin)),   // near-neutral dark
+      ];
+
+    case 'split':
+      // Split-complementary: anchor + 150° and 210°
+      return [0, 150, 210, 10, 160, 200, -10].map(d =>
+        hslToHex(H + d, S * 0.88, L)
+      );
+
+    case 'triad':
+      // Triadic: 3 hues 120° apart
+      return [0, 5, -5, 120, 125, 115, 240, 245].map(d =>
+        hslToHex(H + d, S * 0.88, L)
+      );
+
+    case 'tetrad':
+      // Tetradic: 4 hues 90° apart
+      return [0, 90, 180, 270, 8, 98, 188, 278].map(d =>
+        hslToHex(H + d, S * 0.85, L)
+      );
+
+    case 'neutral': {
+      // Neutral base with skin-tone accent
+      // Warm profiles get beige-cream neutrals, cool get blue-grey neutrals
+      const neutralHue = profile.undertone === 'warm' ? 35 : 220;
+      const neutrals = Array.from({ length: 5 }, (_, i) =>
+        hslToHex(neutralHue, 8, clampL(lMin + i * ((lMax - lMin) / 4)))
+      );
+      // One accent from the complementary of the skin anchor
+      const accent = hslToHex(H + 180, S * 0.9, L);
+      return [...neutrals, skinHex, accent, hslToHex(H, S * 0.4, clampL(L + 10))];
+    }
+
+    case 'earth':
+      // Earthy tones: hues 15–50° (warm browns/tans/olives), depth-adjusted
+      return [15, 25, 35, 45, 90, 110, 20, 30].map(h =>
+        hslToHex(h + hShift, 30 * satScale, clampL(35 + ((h - 15) % 30)))
+      );
+
+    case 'pastel':
+      // Pastels: low saturation, high lightness, hue-spread from anchor
+      return Array.from({ length: 7 }, (_, i) =>
+        hslToHex(H + i * 35, 28 * satScale, clampL(lMax - 5))
+      );
+
+    case 'deep':
+      // Deep/rich tones: high saturation, low lightness
+      return Array.from({ length: 7 }, (_, i) =>
+        hslToHex(H + i * 30, Math.min(70, S * 1.2), clampL(lMin + i * 4))
+      );
+
+    default:
+      return Array.from({ length: 7 }, (_, i) =>
+        hslToHex(H + i * 20, S, L)
+      );
+  }
+}
+
+function generateCombo(type, skinHex, profile, fixedMap) {
+  const pool = buildPool(type, skinHex, profile);
+  return GARMENTS.map((g, i) => {
+    if (fixedMap[g.id]) return { id: g.id, hex: fixedMap[g.id], name: colorName(fixedMap[g.id]), fixed: true };
+    const hex = pool[i % pool.length];
+    return { id: g.id, hex, name: colorName(hex), fixed: false };
+  });
 }
 
 // ─── Color naming ─────────────────────────────────────────────────────────────
@@ -137,49 +281,7 @@ const HARMONIES = [
   { id: 'deep', name: 'Profondi', tag: 'DEEP' },
 ];
 
-function buildPool(type, palette) {
-  const base = palette[0];
-  const [bH, bS, bL] = hexToHsl(base);
-  switch (type) {
-    case 'mono':
-      return Array.from({ length: 8 }, (_, i) => hslToHex(bH, bS * 0.85, Math.max(15, Math.min(85, bL - 35 + i * 10))));
-    case 'analog':
-      return [-50, -30, -15, 0, 15, 30, 50, 65].map(d => hslToHex(bH + d, bS * 0.9, bL));
-    case 'comp':
-      return [
-        ...[-15, 0, 15].map(d => hslToHex(bH + d, bS, Math.min(80, bL + 5))),
-        ...[-15, 0, 15].map(d => hslToHex(bH + 180 + d, bS * 0.9, bL)),
-        hslToHex(bH, bS * 0.3, 85), hslToHex(bH, bS * 0.2, 20),
-      ];
-    case 'split':
-      return [0, 150, 210, 20, 160, 200, -20, 230].map(d => hslToHex(bH + d, bS * 0.88, bL));
-    case 'triad':
-      return [0, 5, -5, 120, 125, 115, 240, 245].map(d => hslToHex(bH + d, bS * 0.88, bL));
-    case 'tetrad':
-      return [0, 90, 180, 270, 8, 98, 188, 278].map(d => hslToHex(bH + d, bS * 0.85, bL));
-    case 'neutral': {
-      const neutrals = ['#F5F3EE', '#E8E5DC', '#C8C4B8', '#8C8880', '#3C3830', '#1C1A14'];
-      return [...neutrals, base, hslToHex(bH, bS, Math.min(75, bL + 15))];
-    }
-    case 'earth':
-      return [25, 35, 45, 20, 95, 110, 30, 15].map(d => hslToHex(d, 40 + (d % 20), 35 + (d % 30)));
-    case 'pastel':
-      return Array.from({ length: 8 }, (_, i) => hslToHex(bH + i * 30, 35, 78));
-    case 'deep':
-      return Array.from({ length: 8 }, (_, i) => hslToHex(bH + i * 25, 55, 22 + i * 4));
-    default:
-      return palette;
-  }
-}
 
-function generateCombo(type, palette, fixedMap) {
-  const pool = buildPool(type, palette);
-  return GARMENTS.map((g, i) => {
-    if (fixedMap[g.id]) return { id: g.id, hex: fixedMap[g.id], name: colorName(fixedMap[g.id]), fixed: true };
-    const hex = pool[i % pool.length];
-    return { id: g.id, hex, name: colorName(hex), fixed: false };
-  });
-}
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
@@ -794,12 +896,13 @@ export default function App() {
   );
 
   const generate = useCallback(() => {
+    const profile = analyzeProfile(skinColor, eyeColor, hairColor);
     const cs = HARMONIES.slice(0, 10).map(h => ({
       type: h.id,
-      items: generateCombo(h.id, season.palette, fixedMap),
+      items: generateCombo(h.id, skinColor, profile, fixedMap),
     }));
     setCombos(cs);
-  }, [season.palette, JSON.stringify(fixedMap), refreshKey]);
+  }, [skinColor, eyeColor, hairColor, JSON.stringify(fixedMap), refreshKey]);
 
   useEffect(() => { generate(); }, [generate]);
 
@@ -875,4 +978,3 @@ export default function App() {
     </div>
   );
 }
-
