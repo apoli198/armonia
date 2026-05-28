@@ -38,12 +38,23 @@ function analyzeProfile(skin,eyes,hair){
   const[,,lSk]=hexToHsl(skin);
   const[,sEy]=hexToHsl(eyes);
   const[,sHr,lHr]=hexToHsl(hair);
-  const depth=(lSk<58||lHr<38)?"deep":"light";
-  const clarity=(Math.abs(lSk-lHr)>30||(sEy+sHr)/2>38)?"clear":"soft";
-  return{undertone,depth,clarity};
+  const lumContrast=Math.abs(lSk-lHr);
+
+  // Depth: pelle chiarissima (lSk>75) non può essere deep
+  // anche se i capelli sono scuri — evita il bug Autunno su pelli molto chiare
+  const depth=(lSk<60&&lHr<45)?"deep":"light";
+
+  // Clarity: alto contrasto luminosità pelle/capelli = clear
+  const clarity=(lumContrast>35||(sEy+sHr)/2>38)?"clear":"soft";
+
+  // Override: pelle molto chiara + capelli molto scuri + alto contrasto
+  // è il profilo classico Inverno — forza cool indipendentemente dall'undertone
+  const finalUndertone=(lSk>72&&lHr<20&&lumContrast>55)?"cool":undertone;
+
+  return{undertone:finalUndertone,depth,clarity,lSk,lHr,lumContrast};
 }
 
-// ─── 12 Seasons (cosmetic label) ─────────────────────────────────────────────
+// ─── 12 Seasons ───────────────────────────────────────────────────────────────
 const SEASONS={
   "warm-light-clear":{name:"Primavera Chiara",  emoji:"🌸",grad:["#f7c59f","#e8935a"],text:"#5a2010",desc:"Calda, luminosa e vivace"},
   "warm-light-soft": {name:"Primavera Delicata",emoji:"🌷",grad:["#f5d0a0","#dda070"],text:"#6b3010",desc:"Calda, luminosa e soffusa"},
@@ -143,7 +154,6 @@ const ThemeCtx=createContext({});
 const useT=()=>useContext(ThemeCtx);
 function makeTheme(dark){
   return dark?{dark,
-    bg:"#000",
     card:"rgba(30,30,32,0.95)",cardB:"1px solid rgba(255,255,255,0.09)",cardS:"0 4px 28px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.06)",
     text:"rgba(255,255,255,0.92)",text2:"rgba(255,255,255,0.46)",text3:"rgba(255,255,255,0.22)",
     sep:"rgba(255,255,255,0.09)",nav:"rgba(16,16,18,0.94)",navB:"1px solid rgba(255,255,255,0.1)",
@@ -152,7 +162,6 @@ function makeTheme(dark){
     tabActive:"rgba(255,255,255,0.13)",tabActiveText:"rgba(255,255,255,0.95)",tabInactive:"rgba(255,255,255,0.28)",
     bd:"blur(28px) saturate(200%)",
   }:{dark,
-    bg:"#f2f2f7",
     card:"rgba(255,255,255,0.82)",cardB:"1px solid rgba(255,255,255,0.8)",cardS:"0 2px 18px rgba(0,0,0,0.07),inset 0 1px 0 rgba(255,255,255,0.95)",
     text:"rgba(0,0,0,0.88)",text2:"rgba(0,0,0,0.46)",text3:"rgba(0,0,0,0.26)",
     sep:"rgba(0,0,0,0.07)",nav:"rgba(250,250,252,0.9)",navB:"1px solid rgba(0,0,0,0.07)",
@@ -182,8 +191,6 @@ function ColorDot({hex,size=32,fixed=false,onClick}){
 }
 
 // ─── ColorPickerModal ─────────────────────────────────────────────────────────
-// Uses ReactDOM.createPortal — renders in document.body, bypasses all
-// scroll containers and overflow:hidden parents. Fixes iOS Safari modal bug.
 function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   const T=useT();
   const[local,setLocal]=useState(value);
@@ -241,26 +248,19 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   };
 
   const sheet=(
-    <div
-      style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",
-        justifyContent:"center",background:T.modalOvl,
-        backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}
-      onClick={onClose}
-    >
-      <div
-        onClick={e=>e.stopPropagation()}
-        style={{width:"100%",maxWidth:480,maxHeight:"88vh",display:"flex",flexDirection:"column",
-          background:T.modal,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,
-          borderRadius:"28px 28px 0 0",borderBottom:"none",
-          border:T.dark?"1px solid rgba(255,255,255,0.1)":"1px solid rgba(255,255,255,0.8)",
-          boxShadow:"0 -8px 48px rgba(0,0,0,0.28)"}}
-      >
-        {/* Handle */}
+    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",
+      justifyContent:"center",background:T.modalOvl,
+      backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}
+      onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"88vh",
+        display:"flex",flexDirection:"column",background:T.modal,
+        backdropFilter:T.bd,WebkitBackdropFilter:T.bd,
+        borderRadius:"28px 28px 0 0",borderBottom:"none",
+        border:T.dark?"1px solid rgba(255,255,255,0.1)":"1px solid rgba(255,255,255,0.8)",
+        boxShadow:"0 -8px 48px rgba(0,0,0,0.28)"}}>
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 2px",flexShrink:0}}>
           <div style={{width:36,height:4,borderRadius:2,background:T.text3}}/>
         </div>
-
-        {/* Scrollable body */}
         <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 1.25rem"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.75rem 0 1rem"}}>
             <span style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",color:T.text}}>Seleziona colore</span>
@@ -268,8 +268,6 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               <X size={15} color={T.text2}/>
             </button>
           </div>
-
-          {/* Mode tabs */}
           <div style={{display:"flex",gap:5,marginBottom:"1rem",background:T.input,borderRadius:14,padding:4}}>
             {[{id:"picker",label:"🎨 Picker"},{id:"image",label:"📷 Da foto"}].map(m=>(
               <button key={m.id} onClick={()=>setMode(m.id)} style={{flex:1,padding:"9px",borderRadius:10,cursor:"pointer",border:mode===m.id?T.cardB:"1px solid transparent",background:mode===m.id?T.card:"transparent",backdropFilter:mode===m.id?T.bd:"none",WebkitBackdropFilter:mode===m.id?T.bd:"none",fontWeight:mode===m.id?700:500,fontSize:13,color:mode===m.id?T.text:T.text2,transition:"all 0.18s"}}>
@@ -277,8 +275,6 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               </button>
             ))}
           </div>
-
-          {/* Preview */}
           <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:"1.25rem",padding:"0.875rem",background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,border:T.cardB,boxShadow:T.cardS}}>
             <div style={{width:52,height:52,borderRadius:14,background:local,border:"2px solid rgba(255,255,255,0.4)",boxShadow:"0 4px 16px rgba(0,0,0,0.22)",flexShrink:0}}/>
             <div>
@@ -286,8 +282,6 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               <div style={{fontSize:12,fontFamily:"monospace",color:T.text2,marginTop:2}}>{local.toUpperCase()}</div>
             </div>
           </div>
-
-          {/* Picker mode */}
           {mode==="picker"&&(
             <div>
               <div onClick={()=>inputRef.current.click()} style={{width:"100%",height:56,borderRadius:16,background:local,border:"2px solid rgba(255,255,255,0.3)",cursor:"pointer",position:"relative",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:"0.875rem",boxShadow:"0 4px 20px rgba(0,0,0,0.2)"}}>
@@ -300,8 +294,6 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
             </div>
           )}
-
-          {/* Image eyedropper mode */}
           {mode==="image"&&(
             <div>
               {!imgSrc?(
@@ -316,8 +308,7 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
                   <div style={{position:"relative",borderRadius:16,overflow:"hidden",border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(255,255,255,0.7)",touchAction:"none",boxShadow:T.cardS}}>
                     <canvas ref={canvasRef}
                       style={{display:"block",width:"100%",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}}
-                      onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}
-                    />
+                      onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}/>
                     {zoom.visible&&(
                       <div style={{position:"absolute",left:Math.max(36,Math.min(zoom.x-32,240)),top:Math.max(4,zoom.y-84),width:64,height:64,borderRadius:"50%",background:zoom.color,border:"3px solid rgba(255,255,255,0.9)",boxShadow:"0 4px 20px rgba(0,0,0,0.4)",pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:contrastColor(zoom.color),opacity:0.6}}/>
@@ -333,8 +324,6 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
             </div>
           )}
-
-          {/* Saved swatches */}
           {savedColors.length>0&&(
             <div style={{marginTop:"1.25rem"}}>
               <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",color:T.text3,textTransform:"uppercase",marginBottom:10}}>Salvati</div>
@@ -347,8 +336,6 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
           )}
           <div style={{height:"1.25rem"}}/>
         </div>
-
-        {/* Sticky action row — always visible */}
         <div style={{flexShrink:0,padding:"0.875rem 1.25rem",paddingBottom:"calc(0.875rem + env(safe-area-inset-bottom,0px))",borderTop:"1px solid "+T.sep,background:T.dark?"rgba(0,0,0,0.4)":"rgba(255,255,255,0.4)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",display:"flex",gap:10}}>
           <button onClick={()=>onSave(local)} style={{flex:1,padding:"14px",border:T.cardB,borderRadius:14,background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,cursor:"pointer",fontSize:14,fontWeight:600,color:T.text2,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
             <Save size={15}/> Salva
@@ -375,7 +362,6 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
   const swatches=(()=>{const p=analyzeProfile(skinColor,eyeColor,hairColor);return buildPool("analog",skinColor,p).slice(0,6);})();
   return(
     <div style={{padding:"1rem"}}>
-      {/* Season hero — Apple Music gradient card */}
       <div style={{borderRadius:24,marginBottom:"1rem",overflow:"hidden",position:"relative",boxShadow:"0 8px 40px rgba(0,0,0,0.28)"}}>
         <div style={{background:"linear-gradient(145deg,"+season.grad[0]+","+season.grad[1]+")",padding:"1.5rem 1.25rem 1.25rem",position:"relative"}}>
           <div style={{position:"absolute",top:0,left:0,right:0,height:"50%",background:"linear-gradient(180deg,rgba(255,255,255,0.18) 0%,transparent 100%)",pointerEvents:"none"}}/>
@@ -389,8 +375,6 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
           </div>
         </div>
       </div>
-
-      {/* Color selectors */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:"1rem"}}>
         {slots.map(({key,label,val,set,saved})=>(
           <div key={key} onClick={()=>setPicker({key,val,set,saved})} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,padding:"0.875rem",border:T.cardB,boxShadow:T.cardS,cursor:"pointer",textAlign:"center"}}>
@@ -400,11 +384,9 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
           </div>
         ))}
       </div>
-
       <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:14,padding:"0.875rem",fontSize:12,color:T.text2,lineHeight:1.6,border:T.cardB}}>
         <strong style={{color:T.text}}>Come funziona:</strong> Tocca i riquadri per scegliere i tuoi colori o campionarli da una foto. La pelle è l'anchor principale per la stagione.
       </div>
-
       {picker&&(
         <ColorPickerModal value={picker.val} onClose={()=>setPicker(null)} onChange={c=>picker.set(c)} savedColors={picker.saved} onSave={c=>onSave(picker.key,c)}/>
       )}
@@ -536,6 +518,12 @@ export default function App(){
   const T=makeTheme(dark);
   const season=detectSeason(skinColor,eyeColor,hairColor);
 
+  // Aggiorna theme-color meta tag dinamicamente al cambio tema
+  useEffect(()=>{
+    const meta=document.querySelector("meta[name=theme-color]");
+    if(meta)meta.setAttribute("content",dark?"#000000":"#f2f2f7");
+  },[dark]);
+
   useEffect(()=>{lsSet("chs_dark",dark);},[dark]);
   useEffect(()=>{lsSet("chs_skinColor",skinColor);},[skinColor]);
   useEffect(()=>{lsSet("chs_eyeColor",eyeColor);},[eyeColor]);
@@ -571,15 +559,29 @@ export default function App(){
       :season.undertone==="cool"?"linear-gradient(180deg,#eff2fa 0%,#e8ecf5 100%)"
       :"linear-gradient(180deg,#f5f3ee 0%,#ede9e2 100%)");
 
+  // paddingTop copre la status bar su iPhone con black-translucent
+  const statusBarHeight="env(safe-area-inset-top,44px)";
+
   return(
     <ThemeCtx.Provider value={T}>
-      <div style={{maxWidth:480,margin:"0 auto",height:"100dvh",background:bg,position:"relative",overflow:"hidden"}}>
-
-        {/* Scrollable content */}
-        <div style={{position:"absolute",inset:0,overflowY:"auto",WebkitOverflowScrolling:"touch",paddingBottom:"calc(72px + env(safe-area-inset-bottom,0px))"}}>
-
+      {/* Root occupa tutto lo schermo inclusa status bar */}
+      <div style={{
+        maxWidth:480,margin:"0 auto",
+        height:"100vh",
+        // webkit-fill-available risolve il problema dello schermo non pieno su Safari
+        minHeight:"-webkit-fill-available",
+        background:bg,position:"relative",overflow:"hidden"
+      }}>
+        {/* Scrollable area — inizia sotto la status bar */}
+        <div style={{
+          position:"absolute",inset:0,
+          overflowY:"auto",
+          WebkitOverflowScrolling:"touch",
+          paddingTop:statusBarHeight,
+          paddingBottom:"calc(72px + env(safe-area-inset-bottom,0px))"
+        }}>
           {/* Header */}
-          <div style={{padding:"1.5rem 1.25rem 0.5rem",display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
+          <div style={{padding:"1rem 1.25rem 0.5rem",display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
             <div>
               <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:T.text,letterSpacing:"-0.03em",lineHeight:1}}>Color Harmony</div>
               <div style={{fontSize:12,color:T.text2,marginTop:4}}>{season.emoji} {season.name}</div>
@@ -594,8 +596,13 @@ export default function App(){
           {tab==="results"&&<ResultsTab combos={combos} comboCount={comboCount} setComboCount={setComboCount} onRefresh={()=>setRefreshKey(k=>k+1)} season={season}/>}
         </div>
 
-        {/* Bottom nav — fixed, always visible */}
-        <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:200,background:T.nav,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderTop:T.navB,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
+        {/* Bottom nav */}
+        <div style={{
+          position:"absolute",bottom:0,left:0,right:0,zIndex:200,
+          background:T.nav,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,
+          borderTop:T.navB,
+          paddingBottom:"env(safe-area-inset-bottom,0px)"
+        }}>
           <div style={{display:"flex",padding:"4px 8px"}}>
             {TABS.map(({id,label,Icon})=>{
               const active=tab===id;
@@ -609,7 +616,6 @@ export default function App(){
             })}
           </div>
         </div>
-
       </div>
     </ThemeCtx.Provider>
   );
