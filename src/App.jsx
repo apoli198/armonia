@@ -27,52 +27,151 @@ function contrastColor(hex){
   return(0.299*r+0.587*g+0.114*b)>145?"rgba(0,0,0,0.85)":"rgba(255,255,255,0.95)";
 }
 
-// ─── Profile analysis ─────────────────────────────────────────────────────────
+// ─── Reflex options ───────────────────────────────────────────────────────────
+const SKIN_REFLEXES=[
+  {id:"warm",   label:"Dorati",  color:"#E8B86D", undertone:"warm"},
+  {id:"cool",   label:"Rosati",  color:"#E8A0A8", undertone:"cool"},
+  {id:"neutral",label:"Neutri",  color:"#C8B89A", undertone:"neutral"},
+];
+const EYE_REFLEXES=[
+  {id:"golden", label:"Nocciola/Dorati", color:"#A0742A", intensityHint:"high", undertoneHint:"warm"},
+  {id:"green",  label:"Verdi",           color:"#5A8A50", intensityHint:"high", undertoneHint:"neutral"},
+  {id:"grey",   label:"Grigi/Azzurri",   color:"#7890A8", intensityHint:"low",  undertoneHint:"cool"},
+  {id:"none",   label:"Nessuno",         color:null,      intensityHint:null,   undertoneHint:null},
+];
+const HAIR_REFLEXES=[
+  {id:"copper", label:"Ramati/Rossi",  color:"#B85030", undertoneHint:"warm", intensityHint:"high"},
+  {id:"golden", label:"Dorati",        color:"#C0902A", undertoneHint:"warm", intensityHint:"low"},
+  {id:"ashy",   label:"Cenere/Freddi", color:"#8090A0", undertoneHint:"cool", intensityHint:"low"},
+  {id:"none",   label:"Nessuno",       color:null,      undertoneHint:null,   intensityHint:null},
+];
+
+// ─── Profile analysis → 3 axes ───────────────────────────────────────────────
+// Returns: undertone (warm|cool), depth (light|deep), intensity (high|low)
+// + numeric scores for dominant detection
 function skinUndertone(hex){
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
   const ws=(r-b)+(r-g)*0.5;
-  if(ws>18)return"warm";if(ws<-8)return"cool";return"neutral";
+  if(ws>18)return"warm"; if(ws<-8)return"cool"; return"neutral";
 }
-function analyzeProfile(skin,eyes,hair){
-  const undertone=skinUndertone(skin);
-  const[,,lSk]=hexToHsl(skin);
-  const[,sEy]=hexToHsl(eyes);
+
+function analyzeProfile(skin,eyes,hair,reflexes){
+  const[,sSk,lSk]=hexToHsl(skin);
+  const[,sEy,lEy]=hexToHsl(eyes);
   const[,sHr,lHr]=hexToHsl(hair);
+
+  // ── Undertone ──────────────────────────────────────────────────────────────
+  let undertone=skinUndertone(skin);
+  // Reflex overrides: pelle > capelli > occhi
+  const skinR=SKIN_REFLEXES.find(r=>r.id===reflexes?.skin);
+  const hairR=HAIR_REFLEXES.find(r=>r.id===reflexes?.hair);
+  const eyeR=EYE_REFLEXES.find(r=>r.id===reflexes?.eye);
+  if(skinR&&skinR.undertone!=="neutral")undertone=skinR.undertone;
+  else if(skinR?.undertone==="neutral")undertone="neutral";
+  else if(hairR?.undertoneHint)undertone=hairR.undertoneHint;
+  else if(eyeR?.undertoneHint)undertone=eyeR.undertoneHint;
+  // Fallback: pelle chiarissima + capelli nerissimi = contrasto estremo → cool
+  else if(lSk>72&&lHr<20&&Math.abs(lSk-lHr)>55)undertone="cool";
+  // Normalize neutral → assign based on leaning
+  if(undertone==="neutral"){
+    const ws=(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(5,7),16))+(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(3,5),16))*0.5;
+    undertone=ws>=0?"warm":"cool";
+  }
+
+  // ── Depth ──────────────────────────────────────────────────────────────────
+  // Depth score: weighted average of skin (primary) and hair lightness
+  const depthScore=lSk*0.7+lHr*0.3;
+  const depth=depthScore<55?"deep":"light";
+
+  // ── Intensity ──────────────────────────────────────────────────────────────
+  // Intensity = perceived chroma/vibrancy of natural coloring
+  // High = saturated eyes/hair, high contrast skin-hair
+  // Low = muted, powdery, blended appearance
   const lumContrast=Math.abs(lSk-lHr);
+  const avgSat=(sSk*0.3+sEy*0.4+sHr*0.3); // eyes weighted most for intensity
+  let intensityScore=avgSat*0.6+lumContrast*0.4;
+  // Reflex adjustments
+  if(hairR?.intensityHint==="high")intensityScore+=12;
+  if(hairR?.intensityHint==="low")intensityScore-=8;
+  if(eyeR?.intensityHint==="high")intensityScore+=10;
+  if(eyeR?.intensityHint==="low")intensityScore-=8;
+  const intensity=intensityScore>28?"high":"low";
 
-  // Depth: pelle chiarissima (lSk>75) non può essere deep
-  // anche se i capelli sono scuri — evita il bug Autunno su pelli molto chiare
-  const depth=(lSk<60&&lHr<45)?"deep":"light";
+  // ── Dominant variable detection ────────────────────────────────────────────
+  // Normalize each axis to 0-100 to find which deviates most from center
+  const undertoneStrength=Math.abs((parseInt(skin.slice(1,3),16)-parseInt(skin.slice(5,7),16))+(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(3,5),16))*0.5);
+  const depthStrength=Math.abs(depthScore-55); // distance from neutral 55
+  const intensityStrength=Math.abs(intensityScore-28); // distance from threshold
 
-  // Clarity: alto contrasto luminosità pelle/capelli = clear
-  const clarity=(lumContrast>35||(sEy+sHr)/2>38)?"clear":"soft";
+  const maxStrength=Math.max(undertoneStrength,depthStrength,intensityStrength);
+  const dominantThreshold=8; // minimum gap to consider a variable dominant
 
-  // Override: pelle molto chiara + capelli molto scuri + alto contrasto
-  // è il profilo classico Inverno — forza cool indipendentemente dall'undertone
-  const finalUndertone=(lSk>72&&lHr<20&&lumContrast>55)?"cool":undertone;
+  let dominant="pure"; // balanced — no single dominant
+  if(maxStrength>dominantThreshold){
+    if(undertoneStrength===maxStrength)dominant="undertone";
+    else if(depthStrength===maxStrength)dominant="depth";
+    else dominant="intensity";
+  }
 
-  return{undertone:finalUndertone,depth,clarity,lSk,lHr,lumContrast};
+  return{undertone,depth,intensity,dominant,
+    scores:{undertone:undertoneStrength,depth:depthStrength,intensity:intensityStrength}};
 }
 
-// ─── 12 Seasons ───────────────────────────────────────────────────────────────
+// ─── 16 Seasons ──────────────────────────────────────────────────────────────
 const SEASONS={
-  "warm-light-clear":{name:"Primavera Chiara",  emoji:"🌸",grad:["#f7c59f","#e8935a"],text:"#5a2010",desc:"Calda, luminosa e vivace"},
-  "warm-light-soft": {name:"Primavera Delicata",emoji:"🌷",grad:["#f5d0a0","#dda070"],text:"#6b3010",desc:"Calda, luminosa e soffusa"},
-  "warm-deep-clear": {name:"Autunno Caldo",     emoji:"🍂",grad:["#c87941","#7a3e18"],text:"#fff",   desc:"Caldo, profondo e intenso"},
-  "warm-deep-soft":  {name:"Autunno Morbido",   emoji:"🍁",grad:["#b8784a","#6b3820"],text:"#fff",   desc:"Caldo, profondo e morbido"},
-  "cool-light-soft": {name:"Estate Soffusa",    emoji:"🌅",grad:["#c5d0e8","#9aaac8"],text:"#1a2848",desc:"Fredda, chiara e polverosa"},
-  "cool-light-clear":{name:"Estate Chiara",     emoji:"☀️",grad:["#a8c0e8","#7090c0"],text:"#0a1e40",desc:"Fredda, chiara e nitida"},
-  "cool-deep-clear": {name:"Inverno Freddo",    emoji:"❄️",grad:["#4060a0","#101840"],text:"#fff",   desc:"Freddo, profondo e contrastato"},
-  "cool-deep-soft":  {name:"Inverno Morbido",   emoji:"🌨️",grad:["#5870a8","#202850"],text:"#fff",   desc:"Freddo, profondo e smorzato"},
-  "neutral-light-clear":{name:"Neutro Luminoso",emoji:"✨",grad:["#d8c8a0","#b0985c"],text:"#3a2c08",desc:"Neutro, luminoso e polivalente"},
-  "neutral-light-soft": {name:"Neutro Soffuso", emoji:"🌿",grad:["#c8c0a0","#a09878"],text:"#3a3020",desc:"Neutro, chiaro e armonioso"},
-  "neutral-deep-clear":  {name:"Neutro Profondo",emoji:"🪨",grad:["#807060","#403830"],text:"#fff",  desc:"Neutro, profondo e deciso"},
-  "neutral-deep-soft":   {name:"Neutro Morbido", emoji:"🤎",grad:["#907868","#504038"],text:"#fff",  desc:"Neutro, profondo e smorzato"},
+  // PRIMAVERA — warm + light + high intensity
+  "spring-light":   {name:"Primavera Chiara",   nameEn:"Spring Light",   emoji:"🌸",grad:["#fce8c0","#f5b87a"],text:"#6b2e08",desc:"Dominante: tono chiaro"},
+  "spring-warm":    {name:"Primavera Calda",     nameEn:"Spring Warm",    emoji:"🌼",grad:["#f7c070","#e89040"],text:"#5a2008",desc:"Dominante: sottotono caldo"},
+  "spring-bright":  {name:"Primavera Brillante", nameEn:"Spring Bright",  emoji:"✨",grad:["#f8d060","#f09830"],text:"#5a2008",desc:"Dominante: alta intensità"},
+  "spring-true":    {name:"Primavera Pura",      nameEn:"True Spring",    emoji:"🌷",grad:["#f5c890","#e8a060"],text:"#5a2008",desc:"Variabili bilanciate"},
+  // ESTATE — cool + light + low intensity
+  "summer-light":   {name:"Estate Chiara",       nameEn:"Summer Light",   emoji:"☀️",grad:["#dce8f5","#b0c8e8"],text:"#1a2848",desc:"Dominante: tono chiaro"},
+  "summer-cool":    {name:"Estate Fredda",        nameEn:"Summer Cool",    emoji:"🌊",grad:["#c0d0e8","#8aA8d0"],text:"#0a1e40",desc:"Dominante: sottotono freddo"},
+  "summer-soft":    {name:"Estate Tenue",         nameEn:"Summer Soft",    emoji:"🌅",grad:["#d0c8e0","#a8a0c8"],text:"#2a2050",desc:"Dominante: bassa intensità"},
+  "summer-true":    {name:"Estate Pura",          nameEn:"True Summer",    emoji:"🌸",grad:["#c8d8ec","#98b8d8"],text:"#0a1e40",desc:"Variabili bilanciate"},
+  // AUTUNNO — warm + deep + low intensity
+  "autumn-deep":    {name:"Autunno Profondo",     nameEn:"Autumn Deep",    emoji:"🍂",grad:["#8b5030","#5a2808"],text:"#fff",   desc:"Dominante: tono scuro"},
+  "autumn-warm":    {name:"Autunno Caldo",        nameEn:"Autumn Warm",    emoji:"🍁",grad:["#c07830","#884010"],text:"#fff",   desc:"Dominante: sottotono caldo"},
+  "autumn-soft":    {name:"Autunno Tenue",        nameEn:"Autumn Soft",    emoji:"🌾",grad:["#b09070","#806040"],text:"#fff",   desc:"Dominante: bassa intensità"},
+  "autumn-true":    {name:"Autunno Puro",         nameEn:"True Autumn",    emoji:"🎃",grad:["#a87040","#705020"],text:"#fff",   desc:"Variabili bilanciate"},
+  // INVERNO — cool + deep + high intensity
+  "winter-deep":    {name:"Inverno Profondo",     nameEn:"Winter Deep",    emoji:"🌑",grad:["#202830","#080c10"],text:"#fff",   desc:"Dominante: tono scuro"},
+  "winter-cool":    {name:"Inverno Freddo",       nameEn:"Winter Cool",    emoji:"❄️",grad:["#304080","#101840"],text:"#fff",   desc:"Dominante: sottotono freddo"},
+  "winter-bright":  {name:"Inverno Brillante",    nameEn:"Winter Bright",  emoji:"💎",grad:["#4060a8","#181840"],text:"#fff",   desc:"Dominante: alta intensità"},
+  "winter-true":    {name:"Inverno Puro",         nameEn:"True Winter",    emoji:"🌨️",grad:["#384878","#101530"],text:"#fff",   desc:"Variabili bilanciate"},
 };
-function detectSeason(skin,eyes,hair){
-  const p=analyzeProfile(skin,eyes,hair);
-  const key=p.undertone+"-"+p.depth+"-"+p.clarity;
-  return{...(SEASONS[key]||SEASONS["neutral-light-soft"]),...p};
+
+function detectSeason(skin,eyes,hair,reflexes){
+  const p=analyzeProfile(skin,eyes,hair,reflexes);
+  const{undertone,depth,intensity,dominant}=p;
+
+  // Determine base season from undertone + depth
+  // (intensity disambiguates Spring vs Autumn within warm,
+  //  Summer vs Winter within cool)
+  let base;
+  if(undertone==="warm"&&depth==="light")base="spring";
+  else if(undertone==="cool"&&depth==="light")base="summer";
+  else if(undertone==="warm"&&depth==="deep")base="autumn";
+  else base="winter";
+
+  // Determine subtype from dominant variable
+  let sub;
+  if(dominant==="pure"){
+    sub="true";
+  } else if(dominant==="depth"){
+    // depth dominant = light subtype for spring/summer, deep subtype for autumn/winter
+    sub="light"; // works for spring/summer; autumn/winter dominant depth = "deep"
+    if(base==="autumn"||base==="winter")sub="deep";
+  } else if(dominant==="undertone"){
+    sub=undertone==="warm"?"warm":"cool";
+  } else {
+    // intensity dominant
+    sub=intensity==="high"?"bright":"soft";
+  }
+
+  const key=base+"-"+sub;
+  const meta=SEASONS[key]||SEASONS[base+"-true"];
+  return{...meta,...p,base,sub};
 }
 
 // ─── Color naming ─────────────────────────────────────────────────────────────
@@ -110,10 +209,12 @@ const HARMONIES=[
 // ─── Harmony generation ───────────────────────────────────────────────────────
 function buildPool(type,skinHex,profile){
   const[bH,bS,bL]=hexToHsl(skinHex);
-  const hShift=profile.undertone==="warm"?10:profile.undertone==="cool"?-10:0;
-  const lMin=profile.depth==="deep"?15:30,lMax=profile.depth==="deep"?65:85;
+  const hShift=profile.undertone==="warm"?10:-10;
+  const lMin=profile.depth==="deep"?15:30;
+  const lMax=profile.depth==="deep"?65:85;
   const cl=l=>Math.max(lMin,Math.min(lMax,l));
-  const ss=profile.clarity==="clear"?1.0:0.65;
+  // Intensity affects saturation scale
+  const ss=profile.intensity==="high"?1.0:0.6;
   const H=bH+hShift,S=bS*ss,L=cl(bL);
   switch(type){
     case"mono":return Array.from({length:7},(_,i)=>hslToHex(H,S*0.9,cl(lMin+i*((lMax-lMin)/6))));
@@ -123,7 +224,7 @@ function buildPool(type,skinHex,profile){
     case"triad":return[0,5,-5,120,125,115,240,245].map(d=>hslToHex(H+d,S*0.88,L));
     case"tetrad":return[0,90,180,270,8,98,188,278].map(d=>hslToHex(H+d,S*0.85,L));
     case"neutral":{
-      const nH=profile.undertone==="warm"?35:profile.undertone==="cool"?220:40;
+      const nH=profile.undertone==="warm"?35:220;
       const ns=Array.from({length:5},(_,i)=>hslToHex(nH,7,cl(lMin+i*((lMax-lMin)/4))));
       return[...ns,skinHex,hslToHex(H+180,S*0.9,L),hslToHex(H,S*0.4,cl(L+10))];
     }
@@ -190,6 +291,34 @@ function ColorDot({hex,size=32,fixed=false,onClick}){
   );
 }
 
+// ─── ReflexPicker ─────────────────────────────────────────────────────────────
+function ReflexPicker({label,options,value,onChange,T}){
+  return(
+    <div style={{marginTop:10}}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>
+        Riflessi
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {options.map(opt=>{
+          const active=value===opt.id;
+          return(
+            <button key={opt.id} onClick={()=>onChange(active?null:opt.id)}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:999,
+                border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,
+                background:active?T.card:T.input,cursor:"pointer",transition:"all 0.15s"}}>
+              {opt.color&&(
+                <div style={{width:12,height:12,borderRadius:"50%",background:opt.color,flexShrink:0,border:"1px solid rgba(255,255,255,0.3)"}}/>
+              )}
+              <span style={{fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{opt.label}</span>
+              {active&&<Check size={9} color={T.text}/>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── ColorPickerModal ─────────────────────────────────────────────────────────
 function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   const T=useT();
@@ -249,8 +378,7 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
 
   const sheet=(
     <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",
-      justifyContent:"center",background:T.modalOvl,
-      backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}
+      justifyContent:"center",background:T.modalOvl,backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}
       onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"88vh",
         display:"flex",flexDirection:"column",background:T.modal,
@@ -351,23 +479,29 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
 }
 
 // ─── ProfileTab ───────────────────────────────────────────────────────────────
-function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHairColor,season,savedColors,onSave}){
+function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHairColor,season,savedColors,onSave,reflexes,setReflexes}){
   const T=useT();
   const[picker,setPicker]=useState(null);
   const slots=[
-    {key:"skin",label:"Incarnato",val:skinColor,set:setSkinColor,saved:savedColors.skin},
-    {key:"eye",label:"Occhi",val:eyeColor,set:setEyeColor,saved:savedColors.eye},
-    {key:"hair",label:"Capelli",val:hairColor,set:setHairColor,saved:savedColors.hair},
+    {key:"skin",label:"Incarnato",val:skinColor,set:setSkinColor,saved:savedColors.skin,reflexOptions:SKIN_REFLEXES,reflexKey:"skin"},
+    {key:"eye",label:"Occhi",val:eyeColor,set:setEyeColor,saved:savedColors.eye,reflexOptions:EYE_REFLEXES,reflexKey:"eye"},
+    {key:"hair",label:"Capelli",val:hairColor,set:setHairColor,saved:savedColors.hair,reflexOptions:HAIR_REFLEXES,reflexKey:"hair"},
   ];
-  const swatches=(()=>{const p=analyzeProfile(skinColor,eyeColor,hairColor);return buildPool("analog",skinColor,p).slice(0,6);})();
+  const swatches=(()=>{
+    const p=analyzeProfile(skinColor,eyeColor,hairColor,reflexes);
+    return buildPool("analog",skinColor,p).slice(0,6);
+  })();
+
   return(
     <div style={{padding:"1rem"}}>
+      {/* Season hero */}
       <div style={{borderRadius:24,marginBottom:"1rem",overflow:"hidden",position:"relative",boxShadow:"0 8px 40px rgba(0,0,0,0.28)"}}>
         <div style={{background:"linear-gradient(145deg,"+season.grad[0]+","+season.grad[1]+")",padding:"1.5rem 1.25rem 1.25rem",position:"relative"}}>
           <div style={{position:"absolute",top:0,left:0,right:0,height:"50%",background:"linear-gradient(180deg,rgba(255,255,255,0.18) 0%,transparent 100%)",pointerEvents:"none"}}/>
-          <div style={{fontSize:30,marginBottom:6}}>{season.emoji}</div>
-          <div style={{fontSize:22,fontWeight:800,color:season.text,fontFamily:"Georgia,serif",letterSpacing:"-0.02em",lineHeight:1.1,marginBottom:4}}>{season.name}</div>
-          <div style={{fontSize:13,color:season.text,opacity:0.75,marginBottom:"1rem"}}>{season.desc}</div>
+          <div style={{fontSize:28,marginBottom:6}}>{season.emoji}</div>
+          <div style={{fontSize:20,fontWeight:800,color:season.text,fontFamily:"Georgia,serif",letterSpacing:"-0.02em",lineHeight:1.1,marginBottom:2}}>{season.name}</div>
+          <div style={{fontSize:11,color:season.text,opacity:0.6,marginBottom:4,fontStyle:"italic"}}>{season.nameEn}</div>
+          <div style={{fontSize:12,color:season.text,opacity:0.75,marginBottom:"1rem"}}>{season.desc}</div>
           <div style={{display:"flex",gap:5}}>
             {swatches.map((c,i)=>(
               <div key={i} style={{flex:1,height:20,borderRadius:6,background:c,boxShadow:"0 1px 4px rgba(0,0,0,0.18)"}}/>
@@ -375,18 +509,34 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
           </div>
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:"1rem"}}>
-        {slots.map(({key,label,val,set,saved})=>(
-          <div key={key} onClick={()=>setPicker({key,val,set,saved})} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,padding:"0.875rem",border:T.cardB,boxShadow:T.cardS,cursor:"pointer",textAlign:"center"}}>
-            <div style={{width:50,height:50,borderRadius:"50%",background:val,border:"2.5px solid rgba(255,255,255,0.5)",margin:"0 auto 8px",boxShadow:"0 4px 14px rgba(0,0,0,0.22)"}}/>
-            <div style={{fontSize:10,fontWeight:700,color:T.text2,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</div>
-            <div style={{fontSize:9,fontFamily:"monospace",color:T.text3,marginTop:2}}>{val.toUpperCase()}</div>
+
+      {/* Color + reflex cards */}
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:"1rem"}}>
+        {slots.map(({key,label,val,set,saved,reflexOptions,reflexKey})=>(
+          <div key={key} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,padding:"0.875rem 1rem",border:T.cardB,boxShadow:T.cardS}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setPicker({key,val,set,saved})}>
+              <div style={{width:46,height:46,borderRadius:"50%",background:val,border:"2.5px solid rgba(255,255,255,0.5)",boxShadow:"0 4px 14px rgba(0,0,0,0.22)",flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>{label}</div>
+                <div style={{fontSize:10,fontFamily:"monospace",color:T.text3,marginTop:1}}>{val.toUpperCase()}</div>
+              </div>
+              <ChevronRight size={16} color={T.text3}/>
+            </div>
+            <ReflexPicker
+              label={label}
+              options={reflexOptions}
+              value={reflexes[reflexKey]||null}
+              onChange={v=>setReflexes(p=>({...p,[reflexKey]:v}))}
+              T={T}
+            />
           </div>
         ))}
       </div>
+
       <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:14,padding:"0.875rem",fontSize:12,color:T.text2,lineHeight:1.6,border:T.cardB}}>
-        <strong style={{color:T.text}}>Come funziona:</strong> Tocca i riquadri per scegliere i tuoi colori o campionarli da una foto. La pelle è l'anchor principale per la stagione.
+        <strong style={{color:T.text}}>Suggerimento:</strong> I riflessi sono opzionali ma migliorano la precisione. Tocca un riflesso selezionato per deselezionarlo.
       </div>
+
       {picker&&(
         <ColorPickerModal value={picker.val} onClose={()=>setPicker(null)} onChange={c=>picker.set(c)} savedColors={picker.saved} onSave={c=>onSave(picker.key,c)}/>
       )}
@@ -488,9 +638,10 @@ function ResultsTab({combos,comboCount,setComboCount,onRefresh,season}){
           <RefreshCw size={13}/> Refresh
         </button>
       </div>
-      <div style={{marginBottom:"0.75rem",display:"flex",alignItems:"center",gap:8}}>
+      <div style={{marginBottom:"0.75rem",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:T.text3}}>Stagione</span>
         <span style={{padding:"4px 12px",borderRadius:999,background:"linear-gradient(90deg,"+season.grad[0]+","+season.grad[1]+")",color:season.text,fontSize:12,fontWeight:700,boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}}>{season.emoji} {season.name}</span>
+        <span style={{fontSize:11,color:T.text3,fontStyle:"italic"}}>{season.nameEn}</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {combos.slice(0,comboCount).map((combo,i)=><OutfitCard key={combo.type+i} combo={combo} index={i}/>)}
@@ -508,6 +659,7 @@ export default function App(){
   const[eyeColor,setEyeColor]=useState(()=>lsGet("chs_eyeColor","#6B4423"));
   const[hairColor,setHairColor]=useState(()=>lsGet("chs_hairColor","#3D2B1F"));
   const[savedColors,setSavedColors]=useState(()=>lsGet("chs_savedColors",{skin:[],eye:[],hair:[]}));
+  const[reflexes,setReflexes]=useState(()=>lsGet("chs_reflexes",{skin:null,eye:null,hair:null}));
   const[modes,setModes]=useState(()=>lsGet("chs_modes",Object.fromEntries(GARMENTS.map(g=>[g.id,"suggested"]))));
   const[fixedColors,setFixedColors]=useState(()=>lsGet("chs_fixedColors",Object.fromEntries(GARMENTS.map(g=>[g.id,"#8B7355"]))));
   const[savedGarment,setSavedGarment]=useState(()=>lsGet("chs_savedGarment",Object.fromEntries(GARMENTS.map(g=>[g.id,[]]))));
@@ -516,30 +668,28 @@ export default function App(){
   const[refreshKey,setRefreshKey]=useState(0);
 
   const T=makeTheme(dark);
-  const season=detectSeason(skinColor,eyeColor,hairColor);
+  const season=detectSeason(skinColor,eyeColor,hairColor,reflexes);
 
-  // Aggiorna theme-color meta tag dinamicamente al cambio tema
   useEffect(()=>{
     const meta=document.querySelector("meta[name=theme-color]");
     if(meta)meta.setAttribute("content",dark?"#000000":"#f2f2f7");
   },[dark]);
-
   useEffect(()=>{lsSet("chs_dark",dark);},[dark]);
   useEffect(()=>{lsSet("chs_skinColor",skinColor);},[skinColor]);
   useEffect(()=>{lsSet("chs_eyeColor",eyeColor);},[eyeColor]);
   useEffect(()=>{lsSet("chs_hairColor",hairColor);},[hairColor]);
   useEffect(()=>{lsSet("chs_savedColors",savedColors);},[savedColors]);
+  useEffect(()=>{lsSet("chs_reflexes",reflexes);},[reflexes]);
   useEffect(()=>{lsSet("chs_modes",modes);},[modes]);
   useEffect(()=>{lsSet("chs_fixedColors",fixedColors);},[fixedColors]);
   useEffect(()=>{lsSet("chs_savedGarment",savedGarment);},[savedGarment]);
   useEffect(()=>{lsSet("chs_comboCount",comboCount);},[comboCount]);
 
   const fixedMap=Object.fromEntries(GARMENTS.filter(g=>modes[g.id]==="fixed").map(g=>[g.id,fixedColors[g.id]]));
-
   const generate=useCallback(()=>{
-    const profile=analyzeProfile(skinColor,eyeColor,hairColor);
+    const profile=analyzeProfile(skinColor,eyeColor,hairColor,reflexes);
     setCombos(HARMONIES.slice(0,10).map(h=>({type:h.id,items:generateCombo(h.id,skinColor,profile,fixedMap)})));
-  },[skinColor,eyeColor,hairColor,JSON.stringify(fixedMap),refreshKey]);
+  },[skinColor,eyeColor,hairColor,JSON.stringify(reflexes),JSON.stringify(fixedMap),refreshKey]);
   useEffect(()=>{generate();},[generate]);
 
   const handleSaveColor=(key,color)=>setSavedColors(p=>({...p,[key]:[...new Set([...p[key],color])].slice(0,8)}));
@@ -553,57 +703,37 @@ export default function App(){
 
   const bg=dark
     ?(season.undertone==="warm"?"linear-gradient(180deg,#1a0c06 0%,#0a0602 60%,#000 100%)"
-      :season.undertone==="cool"?"linear-gradient(180deg,#060818 0%,#020408 60%,#000 100%)"
-      :"linear-gradient(180deg,#0e0e0e 0%,#000 100%)")
+      :"linear-gradient(180deg,#060818 0%,#020408 60%,#000 100%)")
     :(season.undertone==="warm"?"linear-gradient(180deg,#fdf6ee 0%,#f2ece4 100%)"
-      :season.undertone==="cool"?"linear-gradient(180deg,#eff2fa 0%,#e8ecf5 100%)"
-      :"linear-gradient(180deg,#f5f3ee 0%,#ede9e2 100%)");
-
-  // paddingTop copre la status bar su iPhone con black-translucent
-  const statusBarHeight="env(safe-area-inset-top,44px)";
+      :"linear-gradient(180deg,#eff2fa 0%,#e8ecf5 100%)");
 
   return(
     <ThemeCtx.Provider value={T}>
-      {/* Root occupa tutto lo schermo inclusa status bar */}
-      <div style={{
-        maxWidth:480,margin:"0 auto",
-        height:"100vh",
-        // webkit-fill-available risolve il problema dello schermo non pieno su Safari
-        minHeight:"-webkit-fill-available",
-        background:bg,position:"relative",overflow:"hidden"
-      }}>
-        {/* Scrollable area — inizia sotto la status bar */}
+      <div style={{position:"fixed",inset:0,background:bg,overflow:"hidden"}}>
         <div style={{
-          position:"absolute",inset:0,
-          overflowY:"auto",
-          WebkitOverflowScrolling:"touch",
-          paddingTop:statusBarHeight,
-          paddingBottom:"calc(72px + env(safe-area-inset-bottom,0px))"
+          position:"absolute",inset:0,overflowY:"auto",WebkitOverflowScrolling:"touch",
+          paddingTop:"env(safe-area-inset-top,0px)",
+          paddingBottom:"calc(64px + env(safe-area-inset-bottom,0px))",
+          paddingLeft:"env(safe-area-inset-left,0px)",
+          paddingRight:"env(safe-area-inset-right,0px)",
         }}>
-          {/* Header */}
-          <div style={{padding:"1rem 1.25rem 0.5rem",display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
-            <div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:T.text,letterSpacing:"-0.03em",lineHeight:1}}>Color Harmony</div>
-              <div style={{fontSize:12,color:T.text2,marginTop:4}}>{season.emoji} {season.name}</div>
+          <div style={{maxWidth:480,margin:"0 auto"}}>
+            <div style={{padding:"1rem 1.25rem 0.5rem",display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
+              <div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:T.text,letterSpacing:"-0.03em",lineHeight:1}}>Color Harmony</div>
+                <div style={{fontSize:12,color:T.text2,marginTop:4}}>{season.emoji} {season.name}</div>
+              </div>
+              <button onClick={()=>setDark(d=>!d)} style={{width:36,height:36,borderRadius:"50%",border:T.cardB,background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:T.cardS,flexShrink:0,marginTop:4}}>
+                {dark?<Sun size={16} color={T.text}/>:<Moon size={16} color={T.text}/>}
+              </button>
             </div>
-            <button onClick={()=>setDark(d=>!d)} style={{width:36,height:36,borderRadius:"50%",border:T.cardB,background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:T.cardS,flexShrink:0,marginTop:4}}>
-              {dark?<Sun size={16} color={T.text}/>:<Moon size={16} color={T.text}/>}
-            </button>
+            {tab==="profile"&&<ProfileTab skinColor={skinColor} setSkinColor={setSkinColor} eyeColor={eyeColor} setEyeColor={setEyeColor} hairColor={hairColor} setHairColor={setHairColor} season={season} savedColors={savedColors} onSave={handleSaveColor} reflexes={reflexes} setReflexes={setReflexes}/>}
+            {tab==="wardrobe"&&<WardrobeTab modes={modes} setModes={setModes} fixedColors={fixedColors} setFixedColors={setFixedColors} savedGarment={savedGarment} onSaveGarment={handleSaveGarment}/>}
+            {tab==="results"&&<ResultsTab combos={combos} comboCount={comboCount} setComboCount={setComboCount} onRefresh={()=>setRefreshKey(k=>k+1)} season={season}/>}
           </div>
-
-          {tab==="profile"&&<ProfileTab skinColor={skinColor} setSkinColor={setSkinColor} eyeColor={eyeColor} setEyeColor={setEyeColor} hairColor={hairColor} setHairColor={setHairColor} season={season} savedColors={savedColors} onSave={handleSaveColor}/>}
-          {tab==="wardrobe"&&<WardrobeTab modes={modes} setModes={setModes} fixedColors={fixedColors} setFixedColors={setFixedColors} savedGarment={savedGarment} onSaveGarment={handleSaveGarment}/>}
-          {tab==="results"&&<ResultsTab combos={combos} comboCount={comboCount} setComboCount={setComboCount} onRefresh={()=>setRefreshKey(k=>k+1)} season={season}/>}
         </div>
-
-        {/* Bottom nav */}
-        <div style={{
-          position:"absolute",bottom:0,left:0,right:0,zIndex:200,
-          background:T.nav,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,
-          borderTop:T.navB,
-          paddingBottom:"env(safe-area-inset-bottom,0px)"
-        }}>
-          <div style={{display:"flex",padding:"4px 8px"}}>
+        <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:200,background:T.nav,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderTop:T.navB,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
+          <div style={{display:"flex",maxWidth:480,margin:"0 auto",padding:"4px 8px"}}>
             {TABS.map(({id,label,Icon})=>{
               const active=tab===id;
               return(
