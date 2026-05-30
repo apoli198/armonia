@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext } from "react";
 import ReactDOM from "react-dom";
-import { RefreshCw, ChevronRight, Save, Sparkles, Lock, User, Shirt, LayoutGrid, X, Check, Sun, Moon, Minus } from "lucide-react";
+import { RefreshCw, ChevronRight, Save, Sparkles, Lock, User, Shirt, LayoutGrid, X, Check, Sun, Moon, Minus, Plus, Trash2 } from "lucide-react";
 
 // ─── Color math ───────────────────────────────────────────────────────────────
-function hexToHsl(hex) {
+function hexToHsl(hex){
   let r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
   const max=Math.max(r,g,b),min=Math.min(r,g,b);
   let h,s,l=(max+min)/2;
@@ -11,7 +11,7 @@ function hexToHsl(hex) {
     const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);
     switch(max){case r:h=((g-b)/d+(g<b?6:0))/6;break;case g:h=((b-r)/d+2)/6;break;case b:h=((r-g)/d+4)/6;break;}
   }
-  return [h*360,s*100,l*100];
+  return[h*360,s*100,l*100];
 }
 function hslToHex(h,s,l){
   h=((h%360)+360)%360;s=Math.min(100,Math.max(0,s));l=Math.min(100,Math.max(0,l));
@@ -20,7 +20,7 @@ function hslToHex(h,s,l){
   let r=0,g=0,b=0;
   if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}
   else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}
-  return "#"+[r,g,b].map(v=>Math.round((v+m)*255).toString(16).padStart(2,"0")).join("");
+  return"#"+[r,g,b].map(v=>Math.round((v+m)*255).toString(16).padStart(2,"0")).join("");
 }
 function contrastColor(hex){
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
@@ -28,26 +28,27 @@ function contrastColor(hex){
 }
 
 // ─── Weighted circular hue average ───────────────────────────────────────────
-// Averages hues correctly on the circular color wheel
-function avgHue(hues){
-  if(!hues.length)return 0;
-  const sx=hues.reduce((a,h)=>a+Math.cos(h*Math.PI/180),0);
-  const sy=hues.reduce((a,h)=>a+Math.sin(h*Math.PI/180),0);
-  const r=Math.atan2(sy/hues.length,sx/hues.length)*180/Math.PI;
+function avgHue(weightedHues){
+  // weightedHues: [{h, w}]
+  const total=weightedHues.reduce((a,{w})=>a+w,0);
+  if(!total)return 0;
+  const sx=weightedHues.reduce((a,{h,w})=>a+Math.cos(h*Math.PI/180)*w,0);
+  const sy=weightedHues.reduce((a,{h,w})=>a+Math.sin(h*Math.PI/180)*w,0);
+  const r=Math.atan2(sy/total,sx/total)*180/Math.PI;
   return((r%360)+360)%360;
 }
 
-// ─── Seeded random (deterministic per refresh seed) ──────────────────────────
+// ─── Seeded random ────────────────────────────────────────────────────────────
 function seededRand(seed){
   let s=seed;
   return()=>{s=(s*1664525+1013904223)&0xffffffff;return(s>>>0)/0xffffffff;};
 }
 
-// ─── Reflex options ───────────────────────────────────────────────────────────
-const SKIN_REFLEXES=[
-  {id:"warm",   label:"Dorati",  color:"#E8B86D", undertone:"warm"},
-  {id:"cool",   label:"Rosati",  color:"#E8A0A8", undertone:"cool"},
-  {id:"neutral",label:"Neutri",  color:"#C8B89A", undertone:"neutral"},
+// ─── Reflex / undertone options ───────────────────────────────────────────────
+const UNDERTONE_OPTIONS=[
+  {id:"warm",   label:"Caldo",   color:"#E8B86D", undertone:"warm"},
+  {id:"cool",   label:"Freddo",  color:"#B0C4DE", undertone:"cool"},
+  {id:"neutral",label:"Neutro",  color:"#C8B89A", undertone:"neutral"},
 ];
 const EYE_REFLEXES=[
   {id:"golden", label:"Nocciola/Dorati", color:"#A0742A", intensityHint:"high", undertoneHint:"warm"},
@@ -62,18 +63,29 @@ const HAIR_REFLEXES=[
   {id:"none",   label:"Nessuno",       color:null,      undertoneHint:null,   intensityHint:null},
 ];
 
+const PATTERN_OPTIONS=[
+  {id:"solid",   label:"Tinta unita"},
+  {id:"stripes_v",label:"Righe verticali"},
+  {id:"stripes_h",label:"Righe orizzontali"},
+  {id:"check",   label:"Quadri / Tartan"},
+  {id:"dots",    label:"Pois"},
+  {id:"floral",  label:"Fantasia floreale"},
+  {id:"abstract",label:"Fantasia astratta"},
+];
+
 // ─── Profile analysis ─────────────────────────────────────────────────────────
 function skinUndertone(hex){
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
   const ws=(r-b)+(r-g)*0.5;
-  if(ws>18)return"warm"; if(ws<-8)return"cool"; return"neutral";
+  if(ws>18)return"warm";if(ws<-8)return"cool";return"neutral";
 }
 function analyzeProfile(skin,eyes,hair,reflexes){
   const[,sSk,lSk]=hexToHsl(skin);
   const[,sEy]=hexToHsl(eyes);
   const[,sHr,lHr]=hexToHsl(hair);
+  // Undertone: explicit override > auto
   let undertone=skinUndertone(skin);
-  const skinR=SKIN_REFLEXES.find(r=>r.id===reflexes?.skin);
+  const skinR=UNDERTONE_OPTIONS.find(r=>r.id===reflexes?.skin);
   const hairR=HAIR_REFLEXES.find(r=>r.id===reflexes?.hair);
   const eyeR=EYE_REFLEXES.find(r=>r.id===reflexes?.eye);
   if(skinR&&skinR.undertone!=="neutral")undertone=skinR.undertone;
@@ -127,169 +139,99 @@ const SEASONS={
   "winter-bright": {name:"Inverno Brillante",  nameEn:"Winter Bright",  emoji:"💎",grad:["#4060a8","#181840"],text:"#fff",   desc:"Dominante: alta intensità"},
   "winter-true":   {name:"Inverno Puro",       nameEn:"True Winter",    emoji:"🌨️",grad:["#384878","#101530"],text:"#fff",   desc:"Variabili bilanciate"},
 };
-
 function detectSeason(skin,eyes,hair,reflexes){
   const p=analyzeProfile(skin,eyes,hair,reflexes);
   const{undertone,depth,intensity,dominant}=p;
-  let base;
-  if(undertone==="warm"&&depth==="light")base="spring";
-  else if(undertone==="cool"&&depth==="light")base="summer";
-  else if(undertone==="warm"&&depth==="deep")base="autumn";
-  else base="winter";
-  let sub;
-  if(dominant==="pure")sub="true";
-  else if(dominant==="depth")sub=(base==="autumn"||base==="winter")?"deep":"light";
-  else if(dominant==="undertone")sub=undertone==="warm"?"warm":"cool";
-  else sub=intensity==="high"?"bright":"soft";
+  let base=undertone==="warm"&&depth==="light"?"spring":undertone==="cool"&&depth==="light"?"summer":undertone==="warm"&&depth==="deep"?"autumn":"winter";
+  let sub=dominant==="pure"?"true":dominant==="depth"?(base==="autumn"||base==="winter")?"deep":"light":dominant==="undertone"?undertone==="warm"?"warm":"cool":intensity==="high"?"bright":"soft";
   const key=base+"-"+sub;
   return{...(SEASONS[key]||SEASONS[base+"-true"]),...p,base,sub};
 }
 
-// ─── Neutral anchor by season (fallback when no fixed garments) ───────────────
-// Each season has a set of "starting hues" that are characteristic
-// but NOT the skin color — these are typical wardrobe anchors for that season
+// ─── Season anchor hues ───────────────────────────────────────────────────────
 const SEASON_ANCHORS={
-  spring:  [28,45,15,60,340],   // warm golden, yellow, coral, lime, peach
-  summer:  [210,240,280,180,310],// blue-grey, periwinkle, lavender, teal, mauve
-  autumn:  [25,40,85,15,200],   // burnt orange, ochre, olive, rust, teal
-  winter:  [220,0,270,180,350], // navy, true red, purple, teal, fuchsia
+  spring:[28,45,15,60,340],
+  summer:[210,240,280,180,310],
+  autumn:[25,40,85,15,200],
+  winter:[220,0,270,180,350],
 };
 
-// ─── Core: generate palette from anchor hue + profile constraints ─────────────
-// anchorH: the hue to build the harmony around (from fixed garments or season default)
-// type: harmony type
-// profile: undertone/depth/intensity
-// jitter: small random offset per refresh for variety
-function buildHarmonyPool(type, anchorH, profile, jitter=0){
-  // Lightness and saturation constraints from profile
-  const lMin=profile.depth==="deep"?18:32;
-  const lMax=profile.depth==="deep"?62:84;
+// ─── Harmony pool builder ─────────────────────────────────────────────────────
+function buildHarmonyPool(type,anchorH,profile,jitter=0){
+  const lMin=profile.depth==="deep"?18:32,lMax=profile.depth==="deep"?62:84;
   const cl=l=>Math.max(lMin,Math.min(lMax,l));
   const ss=profile.intensity==="high"?0.85:0.55;
-  // Undertone shifts the hue slightly warm or cool
   const uShift=profile.undertone==="warm"?8:-8;
   const H=((anchorH+uShift+jitter)%360+360)%360;
-  // Target lightness: vary across the range for variety
   const lMid=cl((lMin+lMax)/2);
-
   switch(type){
-    case"mono":
-      // 7 steps from dark to light, same hue
-      return Array.from({length:7},(_,i)=>{
-        const l=cl(lMin+i*((lMax-lMin)/6));
-        const s=ss*(0.6+i*0.06); // slightly more saturated toward mid
-        return hslToHex(H,Math.min(80,s*100),l);
-      });
-
-    case"analog":
-      // Spread across ±50° from anchor, varied lightness
-      return[-50,-28,-12,0,12,28,50].map((d,i)=>{
-        const l=cl(lMid+[-8,5,12,0,-10,6,-5][i]);
-        return hslToHex(H+d,ss*80,l);
-      });
-
-    case"comp":{
-      // Anchor side: 3 variants; complement side: 3 variants; 1 neutral
-      const compH=H+180;
-      const side1=[-12,0,12].map((d,i)=>hslToHex(H+d,ss*82,cl(lMid+[8,0,-8][i])));
-      const side2=[-10,0,10].map((d,i)=>hslToHex(compH+d,ss*78,cl(lMid+[-5,5,0][i])));
-      const neutral=hslToHex(H,12,cl(lMax-5));
-      return[...side1,...side2,neutral];
-    }
-
-    case"split":{
-      const s1=H+150,s2=H+210;
-      return[0,8,-8,150,158,210,218].map((d,i)=>{
-        const base=i<3?H:i<5?H+150:H+210;
-        const offset=i<3?[0,8,-8][i]:i<5?[0,8][i-3]:[0,8][i-5];
-        return hslToHex(base+offset,ss*80,cl(lMid+[-3,8,-8,0,6,-5,4][i]));
-      });
-    }
-
-    case"triad":
-      return[0,6,-6,120,126,114,240,246].map((d,i)=>{
-        const l=cl(lMid+[0,8,-8,4,-6,10,-4,6][i]);
-        return hslToHex(H+d,ss*80,l);
-      });
-
-    case"tetrad":
-      return[0,90,180,270,6,96,186,276].map((d,i)=>{
-        const l=cl(lMid+[0,6,-6,3,-3,8,-5,4][i]);
-        return hslToHex(H+d,ss*78,l);
-      });
-
-    case"neutral":{
-      // Warm neutrals for warm profiles, cool for cool
-      const nH=profile.undertone==="warm"?32:215;
-      const neutrals=Array.from({length:4},(_,i)=>
-        hslToHex(nH,8+i*3,cl(lMin+i*((lMax-lMin)/4)))
-      );
-      // One accent from the anchor hue
-      const accent=hslToHex(H,ss*85,cl(lMid));
-      const accent2=hslToHex(H+180,ss*70,cl(lMid+10));
-      return[...neutrals,accent,accent2,hslToHex(nH,5,cl(lMax-8))];
-    }
-
-    case"earth":{
-      // Earth tones appropriate for undertone
-      const earthH=profile.undertone==="cool"
-        ?[190,200,175,160,215,230,185,170]
-        :[22,35,48,70,15,95,28,42];
-      return earthH.map((h,i)=>hslToHex(h,ss*55,cl(28+i*6)));
-    }
-
-    case"pastel":
-      return Array.from({length:7},(_,i)=>
-        hslToHex(H+i*38,ss*42,cl(lMax-6+i%2*4))
-      );
-
-    case"deep":
-      return Array.from({length:7},(_,i)=>
-        hslToHex(H+i*28,Math.min(75,ss*110),cl(lMin+i*5))
-      );
-
-    default:
-      return Array.from({length:7},(_,i)=>hslToHex(H+i*22,ss*75,cl(lMid)));
+    case"mono":return Array.from({length:8},(_,i)=>hslToHex(H,Math.min(80,ss*100*(0.6+i*0.05)),cl(lMin+i*((lMax-lMin)/7))));
+    case"analog":return[-50,-28,-12,0,12,28,50,35].map((d,i)=>hslToHex(H+d,ss*80,cl(lMid+[-8,5,12,0,-10,6,-5,8][i])));
+    case"comp":{const c=H+180;return[...[-12,0,12].map((d,i)=>hslToHex(H+d,ss*82,cl(lMid+[8,0,-8][i]))),  ...[-10,0,10].map((d,i)=>hslToHex(c+d,ss*78,cl(lMid+[-5,5,0][i]))),hslToHex(H,12,cl(lMax-5)),hslToHex(H,8,cl(lMin+5))];}
+    case"split":{return[0,8,-8,150,158,210,218,160].map((d,i)=>{const base=i<3?H:i<5?H+150:i<7?H+210:H+145;return hslToHex(base+(i<3?[0,8,-8][i]:i<5?[0,8][i-3]:i<7?[0,8][i-5]:0),ss*80,cl(lMid+[-3,8,-8,0,6,-5,4,2][i]));});}
+    case"triad":return[0,6,-6,120,126,114,240,246].map((d,i)=>hslToHex(H+d,ss*80,cl(lMid+[0,8,-8,4,-6,10,-4,6][i])));
+    case"tetrad":return[0,90,180,270,6,96,186,276].map((d,i)=>hslToHex(H+d,ss*78,cl(lMid+[0,6,-6,3,-3,8,-5,4][i])));
+    case"neutral":{const nH=profile.undertone==="warm"?32:215;return[...Array.from({length:4},(_,i)=>hslToHex(nH,8+i*3,cl(lMin+i*((lMax-lMin)/4)))),hslToHex(H,ss*85,cl(lMid)),hslToHex(H+180,ss*70,cl(lMid+10)),hslToHex(nH,5,cl(lMax-8)),hslToHex(nH,10,cl(lMin+8))];}
+    case"earth":{const eH=profile.undertone==="cool"?[190,200,175,160,215,230,185,170]:[22,35,48,70,15,95,28,42];return eH.map((h,i)=>hslToHex(h,ss*55,cl(28+i*5)));}
+    case"pastel":return Array.from({length:8},(_,i)=>hslToHex(H+i*38,ss*42,cl(lMax-6+i%2*3)));
+    case"deep":return Array.from({length:8},(_,i)=>hslToHex(H+i*28,Math.min(75,ss*110),cl(lMin+i*4)));
+    default:return Array.from({length:8},(_,i)=>hslToHex(H+i*22,ss*75,cl(lMid)));
   }
 }
 
-// ─── Main combo generator — fixed-anchored ────────────────────────────────────
-function generateCombo(type, profile, fixedMap, excludedIds, season, seed){
-  const rand=seededRand(seed);
+// ─── Weighted anchor from garment colors (primary + secondaries) ──────────────
+// garmentEntry: {hex, secondaries: [{hex, pct}]}
+function garmentWeightedHues(entry){
+  if(!entry)return[];
+  const primaryPct=100-(entry.secondaries||[]).reduce((a,s)=>a+s.pct,0);
+  const result=[{h:hexToHsl(entry.hex)[0],w:Math.max(0,primaryPct)}];
+  for(const s of(entry.secondaries||[])){
+    if(s.hex)result.push({h:hexToHsl(s.hex)[0],w:s.pct});
+  }
+  return result;
+}
 
-  // Collect fixed colors (excluding excluded garments)
+// ─── Pattern → forced harmony ─────────────────────────────────────────────────
+// When auto mode but pattern is set, force simpler harmony
+function patternForcedType(pattern){
+  if(!pattern||pattern==="solid")return null;
+  // Busy patterns → mono or neutral only
+  return"mono";
+}
+
+// ─── Main combo generator ─────────────────────────────────────────────────────
+function generateCombo(type,profile,fixedMap,excludedIds,season,seed){
+  const rand=seededRand(seed);
   const fixedEntries=Object.entries(fixedMap).filter(([id])=>!excludedIds.includes(id));
 
-  // Determine anchor hue
+  // Build weighted hue list from all fixed garments (primary + secondary colors)
   let anchorH;
   if(fixedEntries.length>0){
-    // Use circular average of all fixed garment hues as anchor
-    const hues=fixedEntries.map(([,hex])=>hexToHsl(hex)[0]);
-    anchorH=avgHue(hues);
+    const allWeighted=fixedEntries.flatMap(([,entry])=>garmentWeightedHues(entry));
+    anchorH=avgHue(allWeighted);
   } else {
-    // No fixed garments: pick a random characteristic hue for this season
     const anchors=SEASON_ANCHORS[season.base]||SEASON_ANCHORS.autumn;
-    const idx=Math.floor(rand()*anchors.length);
-    anchorH=anchors[idx];
+    anchorH=anchors[Math.floor(rand()*anchors.length)];
   }
 
-  // Jitter: ±18° variation per refresh for variety
   const jitter=(rand()-0.5)*36;
 
-  const pool=buildHarmonyPool(type,anchorH,profile,jitter);
-
-  // Shuffle pool so garment order doesn't always map to pool order
-  const shuffled=[...pool];
-  for(let i=shuffled.length-1;i>0;i--){
-    const j=Math.floor(rand()*(i+1));
-    [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
+  // Determine effective harmony type (pattern may override)
+  let effectiveType=type;
+  for(const[,entry] of fixedEntries){
+    const forced=patternForcedType(entry.pattern);
+    if(forced){effectiveType=forced;break;}
   }
+
+  const pool=buildHarmonyPool(effectiveType,anchorH,profile,jitter);
+  const shuffled=[...pool];
+  for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
 
   let poolIdx=0;
   return GARMENTS
     .filter(g=>!excludedIds.includes(g.id))
     .map(g=>{
-      if(fixedMap[g.id])return{id:g.id,hex:fixedMap[g.id],name:colorName(fixedMap[g.id]),fixed:true};
+      if(fixedMap[g.id])return{id:g.id,...fixedMap[g.id],fixed:true,name:colorName(fixedMap[g.id].hex)};
       const hex=shuffled[poolIdx%shuffled.length];
       poolIdx++;
       return{id:g.id,hex,name:colorName(hex),fixed:false};
@@ -300,37 +242,32 @@ function generateCombo(type, profile, fixedMap, excludedIds, season, seed){
 function colorName(hex){
   const[h,s,l]=hexToHsl(hex);
   if(s<8){if(l>90)return"Bianco";if(l>75)return"Grigio Perla";if(l>55)return"Grigio Chiaro";if(l>35)return"Grigio Medio";if(l>18)return"Grafite";return"Nero";}
-  const n=[[15,l>65?"Rosa Pesca":l>40?"Rosso Mattone":"Borgogna"],[30,l>65?"Albicocca":l>40?"Arancio":"Terracotta"],
-    [50,l>65?"Crema Dorata":l>40?"Ocra":"Senape"],[75,l>65?"Giallo Pastello":l>40?"Giallo Dorato":"Verde Muschio"],
-    [130,l>65?"Verde Menta":l>40?"Verde Salvia":"Verde Bosco"],[165,l>65?"Acquamarina":l>40?"Verde Acqua":"Petrolio"],
-    [195,l>65?"Azzurro Cielo":l>40?"Celeste":"Blu Scuro"],[240,l>65?"Blu Polvere":l>40?"Blu Cobalto":"Blu Notte"],
-    [275,l>65?"Lavanda":l>40?"Viola":"Indaco"],[310,l>65?"Lilla":l>40?"Malva":"Prugna"],
-    [340,l>65?"Rosa Cipria":l>40?"Rosa Antico":"Rosa Scuro"],[360,l>65?"Rosa Pesca":l>40?"Rosso Mattone":"Borgogna"]];
+  const n=[[15,l>65?"Rosa Pesca":l>40?"Rosso Mattone":"Borgogna"],[30,l>65?"Albicocca":l>40?"Arancio":"Terracotta"],[50,l>65?"Crema Dorata":l>40?"Ocra":"Senape"],[75,l>65?"Giallo Pastello":l>40?"Giallo Dorato":"Verde Muschio"],[130,l>65?"Verde Menta":l>40?"Verde Salvia":"Verde Bosco"],[165,l>65?"Acquamarina":l>40?"Verde Acqua":"Petrolio"],[195,l>65?"Azzurro Cielo":l>40?"Celeste":"Blu Scuro"],[240,l>65?"Blu Polvere":l>40?"Blu Cobalto":"Blu Notte"],[275,l>65?"Lavanda":l>40?"Viola":"Indaco"],[310,l>65?"Lilla":l>40?"Malva":"Prugna"],[340,l>65?"Rosa Cipria":l>40?"Rosa Antico":"Rosa Scuro"],[360,l>65?"Rosa Pesca":l>40?"Rosso Mattone":"Borgogna"]];
   for(const[t,nm]of n)if(h<t)return nm;
   return"Rosso";
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GARMENTS=[
-  {id:"maglia",  label:"Maglia / Camicia",short:"Maglia"},
-  {id:"felpa",   label:"Felpa",           short:"Felpa"},
-  {id:"giubbotto",label:"Giubbotto",      short:"Giubbotto"},
-  {id:"cintura", label:"Cintura",         short:"Cintura"},
-  {id:"pantalone",label:"Pantalone",      short:"Pantalone"},
-  {id:"calzini", label:"Calzini",         short:"Calzini"},
-  {id:"scarpe",  label:"Scarpe",          short:"Scarpe"},
+  {id:"maglia",   label:"Maglia / Camicia",short:"Maglia"},
+  {id:"felpa",    label:"Felpa",           short:"Felpa"},
+  {id:"giubbotto",label:"Giubbotto",       short:"Giubbotto"},
+  {id:"cintura",  label:"Cintura",         short:"Cintura"},
+  {id:"pantalone",label:"Pantalone",       short:"Pantalone"},
+  {id:"calzini",  label:"Calzini",         short:"Calzini"},
+  {id:"scarpe",   label:"Scarpe",          short:"Scarpe"},
 ];
 const HARMONIES=[
-  {id:"mono",  name:"Monocromatico",   tag:"MONO"},
-  {id:"analog",name:"Analogo",         tag:"ANAL"},
-  {id:"comp",  name:"Complementare",   tag:"COMP"},
-  {id:"split", name:"Split-Comp",      tag:"SPLT"},
-  {id:"triad", name:"Triade",          tag:"TRIA"},
-  {id:"tetrad",name:"Tetrade",         tag:"TETR"},
-  {id:"neutral",name:"Neutri Accentati",tag:"NEUT"},
-  {id:"earth", name:"Toni Terra",      tag:"TERA"},
-  {id:"pastel",name:"Pastello",        tag:"PAST"},
-  {id:"deep",  name:"Profondi",        tag:"DEEP"},
+  {id:"mono",   name:"Monocromatico",    tag:"MONO"},
+  {id:"analog", name:"Analogo",          tag:"ANAL"},
+  {id:"comp",   name:"Complementare",    tag:"COMP"},
+  {id:"split",  name:"Split-Comp",       tag:"SPLT"},
+  {id:"triad",  name:"Triade",           tag:"TRIA"},
+  {id:"tetrad", name:"Tetrade",          tag:"TETR"},
+  {id:"neutral",name:"Neutri Accentati", tag:"NEUT"},
+  {id:"earth",  name:"Toni Terra",       tag:"TERA"},
+  {id:"pastel", name:"Pastello",         tag:"PAST"},
+  {id:"deep",   name:"Profondi",         tag:"DEEP"},
 ];
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
@@ -360,37 +297,45 @@ function makeTheme(dark){
   };
 }
 
+// ─── useDarkMode — syncs with system, allows manual override ──────────────────
+function useDarkMode(){
+  const[dark,setDarkRaw]=useState(()=>lsGet("chs_dark",window.matchMedia?.("(prefers-color-scheme: dark)").matches||false));
+
+  // System change listener — always follows system regardless of manual state
+  useEffect(()=>{
+    const mq=window.matchMedia?.("(prefers-color-scheme: dark)");
+    if(!mq)return;
+    const handler=e=>{setDarkRaw(e.matches);lsSet("chs_dark",e.matches);};
+    mq.addEventListener("change",handler);
+    return()=>mq.removeEventListener("change",handler);
+  },[]);
+
+  const toggle=useCallback(()=>{
+    setDarkRaw(d=>{lsSet("chs_dark",!d);return!d;});
+  },[]);
+
+  return[dark,toggle];
+}
+
 // ─── ColorDot ─────────────────────────────────────────────────────────────────
 function ColorDot({hex,size=32,fixed=false,onClick}){
   return(
-    <div onClick={onClick} style={{width:size,height:size,borderRadius:"50%",background:hex,
-      border:fixed?"2px solid rgba(255,255,255,0.8)":"1.5px solid rgba(255,255,255,0.4)",
-      cursor:onClick?"pointer":"default",flexShrink:0,position:"relative",
-      boxShadow:"0 2px 10px rgba(0,0,0,0.22)"}}>
-      {fixed&&(
-        <div style={{position:"absolute",bottom:-2,right:-2,width:11,height:11,borderRadius:"50%",
-          background:"rgba(0,0,0,0.8)",border:"1.5px solid #fff",
-          display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <Lock size={5} color="#fff"/>
-        </div>
-      )}
+    <div onClick={onClick} style={{width:size,height:size,borderRadius:"50%",background:hex,border:fixed?"2px solid rgba(255,255,255,0.8)":"1.5px solid rgba(255,255,255,0.4)",cursor:onClick?"pointer":"default",flexShrink:0,position:"relative",boxShadow:"0 2px 10px rgba(0,0,0,0.22)"}}>
+      {fixed&&<div style={{position:"absolute",bottom:-2,right:-2,width:11,height:11,borderRadius:"50%",background:"rgba(0,0,0,0.8)",border:"1.5px solid #fff",display:"flex",alignItems:"center",justifyContent:"center"}}><Lock size={5} color="#fff"/></div>}
     </div>
   );
 }
 
 // ─── ReflexPicker ─────────────────────────────────────────────────────────────
-function ReflexPicker({options,value,onChange,T}){
+function ReflexPicker({label,options,value,onChange,T}){
   return(
     <div style={{marginTop:10}}>
-      <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>Riflessi</div>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>{label}</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {options.map(opt=>{
           const active=value===opt.id;
           return(
-            <button key={opt.id} onClick={()=>onChange(active?null:opt.id)}
-              style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:999,
-                border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,
-                background:active?T.card:T.input,cursor:"pointer",transition:"all 0.15s"}}>
+            <button key={opt.id} onClick={()=>onChange(active?null:opt.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",transition:"all 0.15s"}}>
               {opt.color&&<div style={{width:12,height:12,borderRadius:"50%",background:opt.color,border:"1px solid rgba(255,255,255,0.3)"}}/>}
               <span style={{fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{opt.label}</span>
               {active&&<Check size={9} color={T.text}/>}
@@ -403,56 +348,75 @@ function ReflexPicker({options,value,onChange,T}){
 }
 
 // ─── ColorPickerModal ─────────────────────────────────────────────────────────
+const CANVAS_W=320,CANVAS_H=240; // fixed sampling area in CSS px
+
 function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   const T=useT();
   const[local,setLocal]=useState(value);
   const[mode,setMode]=useState("picker");
   const[imgSrc,setImgSrc]=useState(null);
   const[zoom,setZoom]=useState({visible:false,x:0,y:0,color:"#000"});
+  // imageRect: the actual drawn image rect within the canvas (for contain fit)
+  const[imageRect,setImageRect]=useState(null);
   const inputRef=useRef(),fileRef=useRef(),canvasRef=useRef(),isDragging=useRef(false);
 
   const drawImage=useCallback((src)=>{
     const img=new Image();
     img.onload=()=>{
       const cv=canvasRef.current;if(!cv)return;
-      const dpr=window.devicePixelRatio||1,cssW=cv.parentElement.clientWidth;
-      const cssH=Math.min(cssW*(img.naturalHeight/img.naturalWidth),260);
-      cv.style.width=cssW+"px";cv.style.height=cssH+"px";
-      cv.width=Math.round(cssW*dpr);cv.height=Math.round(cssH*dpr);
-      const ctx=cv.getContext("2d");ctx.scale(dpr,dpr);ctx.drawImage(img,0,0,cssW,cssH);
+      const dpr=window.devicePixelRatio||1;
+      // Canvas buffer = fixed area * dpr
+      cv.width=CANVAS_W*dpr;cv.height=CANVAS_H*dpr;
+      cv.style.width=CANVAS_W+"px";cv.style.height=CANVAS_H+"px";
+      const ctx=cv.getContext("2d");
+      ctx.fillStyle="#000";
+      ctx.fillRect(0,0,cv.width,cv.height);
+      // Compute contain rect
+      const iw=img.naturalWidth,ih=img.naturalHeight;
+      const scale=Math.min((CANVAS_W*dpr)/iw,(CANVAS_H*dpr)/ih);
+      const dw=iw*scale,dh=ih*scale;
+      const dx=(cv.width-dw)/2,dy=(cv.height-dh)/2;
+      ctx.drawImage(img,dx,dy,dw,dh);
+      // Store CSS-space image rect for coordinate clamping (optional, not strictly needed)
+      setImageRect({x:dx/dpr,y:dy/dpr,w:dw/dpr,h:dh/dpr});
     };
     img.src=src;
   },[]);
   useEffect(()=>{if(imgSrc)drawImage(imgSrc);},[imgSrc,drawImage]);
 
-  const pick=useCallback((px,py)=>{
+  const pick=useCallback((cssX,cssY)=>{
     const cv=canvasRef.current;if(!cv)return;
-    const rect=cv.getBoundingClientRect();
-    const cssW=parseFloat(cv.style.width)||rect.width,cssH=parseFloat(cv.style.height)||rect.height;
-    const cx=Math.max(0,Math.min(cssW-1,px-(rect.left+window.scrollX)));
-    const cy=Math.max(0,Math.min(cssH-1,py-(rect.top+window.scrollY)));
-    const dpr=window.devicePixelRatio||1,ctx=cv.getContext("2d");
+    const dpr=window.devicePixelRatio||1;
+    // Clamp to canvas CSS area
+    const cx=Math.max(0,Math.min(CANVAS_W-1,cssX));
+    const cy=Math.max(0,Math.min(CANVAS_H-1,cssY));
+    const ctx=cv.getContext("2d");
     let R=0,G=0,B=0,n=0;
     for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++){
-      const bx=Math.floor(cx*dpr)+dx,by=Math.floor(cy*dpr)+dy;
+      const bx=Math.round(cx*dpr)+dx,by=Math.round(cy*dpr)+dy;
       if(bx>=0&&bx<cv.width&&by>=0&&by<cv.height){const d=ctx.getImageData(bx,by,1,1).data;R+=d[0];G+=d[1];B+=d[2];n++;}
     }
     const hex="#"+[Math.round(R/n),Math.round(G/n),Math.round(B/n)].map(v=>v.toString(16).padStart(2,"0")).join("");
     setLocal(hex);setZoom({visible:true,x:cx,y:cy,color:hex});
   },[]);
 
-  const onTS=useCallback(e=>{e.preventDefault();e.stopPropagation();isDragging.current=true;pick(e.touches[0].pageX,e.touches[0].pageY);},[pick]);
-  const onTM=useCallback(e=>{if(!isDragging.current)return;e.preventDefault();e.stopPropagation();pick(e.touches[0].pageX,e.touches[0].pageY);},[pick]);
+  // Translate touch/click page coords → CSS coords relative to canvas
+  const toCss=useCallback((pageX,pageY)=>{
+    const cv=canvasRef.current;if(!cv)return{x:0,y:0};
+    const rect=cv.getBoundingClientRect();
+    return{x:pageX-rect.left-window.scrollX,y:pageY-rect.top-window.scrollY};
+  },[]);
+
+  const onTS=useCallback(e=>{e.preventDefault();e.stopPropagation();isDragging.current=true;const{x,y}=toCss(e.touches[0].pageX,e.touches[0].pageY);pick(x,y);},[pick,toCss]);
+  const onTM=useCallback(e=>{if(!isDragging.current)return;e.preventDefault();e.stopPropagation();const{x,y}=toCss(e.touches[0].pageX,e.touches[0].pageY);pick(x,y);},[pick,toCss]);
   const onTE=useCallback(e=>{e.preventDefault();isDragging.current=false;setTimeout(()=>setZoom(z=>({...z,visible:false})),900);},[]);
-  const onCK=useCallback(e=>{pick(e.pageX,e.pageY);setTimeout(()=>setZoom(z=>({...z,visible:false})),900);},[pick]);
+  const onCK=useCallback(e=>{const{x,y}=toCss(e.pageX,e.pageY);pick(x,y);setTimeout(()=>setZoom(z=>({...z,visible:false})),900);},[pick,toCss]);
   const handleFile=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setImgSrc(ev.target.result);setMode("image");};r.readAsDataURL(f);};
 
   const sheet=(
     <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:T.modalOvl,backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"88vh",display:"flex",flexDirection:"column",background:T.modal,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:"28px 28px 0 0",borderBottom:"none",border:T.dark?"1px solid rgba(255,255,255,0.1)":"1px solid rgba(255,255,255,0.8)",boxShadow:"0 -8px 48px rgba(0,0,0,0.28)"}}>
-        <div style={{display:"flex",justifyContent:"center",padding:"10px 0 2px",flexShrink:0}}>
-          <div style={{width:36,height:4,borderRadius:2,background:T.text3}}/>
-        </div>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"88vh",display:"flex",flexDirection:"column",background:T.modal,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:"28px 28px 0 0",border:T.dark?"1px solid rgba(255,255,255,0.1)":"1px solid rgba(255,255,255,0.8)",boxShadow:"0 -8px 48px rgba(0,0,0,0.28)"}}>
+        <div style={{display:"flex",justifyContent:"center",padding:"10px 0 2px",flexShrink:0}}><div style={{width:36,height:4,borderRadius:2,background:T.text3}}/></div>
         <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 1.25rem"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.75rem 0 1rem"}}>
             <span style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",color:T.text}}>Seleziona colore</span>
@@ -465,10 +429,7 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
           </div>
           <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:"1.25rem",padding:"0.875rem",background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,border:T.cardB,boxShadow:T.cardS}}>
             <div style={{width:52,height:52,borderRadius:14,background:local,border:"2px solid rgba(255,255,255,0.4)",boxShadow:"0 4px 16px rgba(0,0,0,0.22)",flexShrink:0}}/>
-            <div>
-              <div style={{fontSize:15,fontWeight:700,color:T.text}}>{colorName(local)}</div>
-              <div style={{fontSize:12,fontFamily:"monospace",color:T.text2,marginTop:2}}>{local.toUpperCase()}</div>
-            </div>
+            <div><div style={{fontSize:15,fontWeight:700,color:T.text}}>{colorName(local)}</div><div style={{fontSize:12,fontFamily:"monospace",color:T.text2,marginTop:2}}>{local.toUpperCase()}</div></div>
           </div>
           {mode==="picker"&&(
             <div>
@@ -491,16 +452,17 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               ):(
                 <div>
                   <div style={{fontSize:12,color:T.text2,marginBottom:8,textAlign:"center"}}>👆 Tocca e trascina per campionare</div>
-                  <div style={{position:"relative",borderRadius:16,overflow:"hidden",border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(255,255,255,0.7)",touchAction:"none",boxShadow:T.cardS}}>
-                    <canvas ref={canvasRef} style={{display:"block",width:"100%",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}/>
+                  {/* Fixed-size canvas container */}
+                  <div style={{width:CANVAS_W,height:CANVAS_H,margin:"0 auto",borderRadius:16,overflow:"hidden",border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(255,255,255,0.7)",touchAction:"none",boxShadow:T.cardS,background:"#000",position:"relative"}}>
+                    <canvas ref={canvasRef} style={{display:"block",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}/>
                     {zoom.visible&&(
-                      <div style={{position:"absolute",left:Math.max(36,Math.min(zoom.x-32,240)),top:Math.max(4,zoom.y-84),width:64,height:64,borderRadius:"50%",background:zoom.color,border:"3px solid rgba(255,255,255,0.9)",boxShadow:"0 4px 20px rgba(0,0,0,0.4)",pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
+                      <div style={{position:"absolute",left:Math.max(36,Math.min(zoom.x-32,CANVAS_W-68)),top:Math.max(4,zoom.y-84),width:64,height:64,borderRadius:"50%",background:zoom.color,border:"3px solid rgba(255,255,255,0.9)",boxShadow:"0 4px 20px rgba(0,0,0,0.4)",pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:contrastColor(zoom.color),opacity:0.6}}/>
                         <div style={{fontSize:7,fontFamily:"monospace",color:contrastColor(zoom.color),opacity:0.75}}>{zoom.color.toUpperCase()}</div>
                       </div>
                     )}
                   </div>
-                  <button onClick={()=>{setImgSrc(null);if(fileRef.current)fileRef.current.value="";}} style={{marginTop:8,width:"100%",padding:"9px",border:T.inputB,borderRadius:10,background:T.input,cursor:"pointer",fontSize:12,color:T.text2}}>Cambia foto</button>
+                  <button onClick={()=>{setImgSrc(null);setImageRect(null);if(fileRef.current)fileRef.current.value="";}} style={{marginTop:8,width:"100%",padding:"9px",border:T.inputB,borderRadius:10,background:T.input,cursor:"pointer",fontSize:12,color:T.text2}}>Cambia foto</button>
                 </div>
               )}
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
@@ -510,9 +472,7 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
             <div style={{marginTop:"1.25rem"}}>
               <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",color:T.text3,textTransform:"uppercase",marginBottom:10}}>Salvati</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {savedColors.map((c,i)=>(
-                  <div key={i} onClick={()=>setLocal(c)} style={{width:40,height:40,borderRadius:10,background:c,border:c===local?"2.5px solid rgba(255,255,255,0.9)":"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}/>
-                ))}
+                {savedColors.map((c,i)=><div key={i} onClick={()=>setLocal(c)} style={{width:40,height:40,borderRadius:10,background:c,border:c===local?"2.5px solid rgba(255,255,255,0.9)":"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}/>)}
               </div>
             </div>
           )}
@@ -528,14 +488,99 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   return ReactDOM.createPortal(sheet,document.body);
 }
 
+// ─── GarmentColorEditor — primary + up to 2 secondary colors + pattern ────────
+function GarmentColorEditor({garment,entry,onUpdate,savedGarment,onSaveGarment,T}){
+  const[pickerTarget,setPickerTarget]=useState(null); // "primary" | 0 | 1
+
+  const primaryPct=100-(entry.secondaries||[]).reduce((a,s)=>a+s.pct,0);
+
+  const addSecondary=()=>{
+    if((entry.secondaries||[]).length>=2)return;
+    const defaults=["#8B7355","#4A6080"];
+    const idx=(entry.secondaries||[]).length;
+    onUpdate({...entry,secondaries:[...(entry.secondaries||[]),{hex:defaults[idx],pct:20}]});
+  };
+  const removeSecondary=(i)=>{
+    const s=[...(entry.secondaries||[])];s.splice(i,1);
+    onUpdate({...entry,secondaries:s});
+  };
+  const updateSecondaryHex=(i,hex)=>{
+    const s=[...(entry.secondaries||[])];s[i]={...s[i],hex};
+    onUpdate({...entry,secondaries:s});
+  };
+  const updateSecondaryPct=(i,pct)=>{
+    const s=[...(entry.secondaries||[])];
+    const maxPct=90-(entry.secondaries||[]).filter((_,j)=>j!==i).reduce((a,x)=>a+x.pct,0);
+    s[i]={...s[i],pct:Math.max(5,Math.min(maxPct,pct))};
+    onUpdate({...entry,secondaries:s});
+  };
+
+  return(
+    <div>
+      {/* Primary color row */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+        <div style={{width:38,height:38,borderRadius:10,background:entry.hex,border:"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}} onClick={()=>setPickerTarget("primary")}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{colorName(entry.hex)}</div>
+          <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{entry.hex.toUpperCase()} · {Math.round(primaryPct)}%</div>
+        </div>
+        {(entry.secondaries||[]).length<2&&(
+          <button onClick={addSecondary} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:999,border:"1.5px solid "+T.sep,background:T.input,cursor:"pointer",fontSize:11,color:T.text2}}>
+            <Plus size={10}/> Colore
+          </button>
+        )}
+      </div>
+
+      {/* Secondary colors */}
+      {(entry.secondaries||[]).map((s,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingLeft:12,borderLeft:"2px solid "+T.sep}}>
+          <div style={{width:30,height:30,borderRadius:8,background:s.hex,border:"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",flexShrink:0}} onClick={()=>setPickerTarget(i)}/>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:T.text2}}>{colorName(s.hex)}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <button onClick={()=>updateSecondaryPct(i,s.pct-5)} style={{width:22,height:22,borderRadius:6,border:T.inputB,background:T.input,cursor:"pointer",color:T.text2,display:"flex",alignItems:"center",justifyContent:"center"}}><Minus size={9}/></button>
+            <span style={{fontSize:11,fontWeight:700,color:T.text,minWidth:28,textAlign:"center"}}>{s.pct}%</span>
+            <button onClick={()=>updateSecondaryPct(i,s.pct+5)} style={{width:22,height:22,borderRadius:6,border:T.inputB,background:T.input,cursor:"pointer",color:T.text2,display:"flex",alignItems:"center",justifyContent:"center"}}><Plus size={9}/></button>
+          </div>
+          <button onClick={()=>removeSecondary(i)} style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",cursor:"pointer",color:T.text3,display:"flex",alignItems:"center",justifyContent:"center"}}><Trash2 size={12}/></button>
+        </div>
+      ))}
+
+      {/* Pattern selector */}
+      <div style={{marginTop:8}}>
+        <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>Fantasia</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {PATTERN_OPTIONS.map(p=>{
+            const active=(entry.pattern||"solid")===p.id;
+            return(
+              <button key={p.id} onClick={()=>onUpdate({...entry,pattern:p.id})} style={{padding:"4px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Pickers */}
+      {pickerTarget==="primary"&&(
+        <ColorPickerModal value={entry.hex} onClose={()=>setPickerTarget(null)} onChange={hex=>onUpdate({...entry,hex})} savedColors={savedGarment} onSave={onSaveGarment}/>
+      )}
+      {typeof pickerTarget==="number"&&(
+        <ColorPickerModal value={(entry.secondaries||[])[pickerTarget]?.hex||"#888888"} onClose={()=>setPickerTarget(null)} onChange={hex=>updateSecondaryHex(pickerTarget,hex)} savedColors={savedGarment} onSave={onSaveGarment}/>
+      )}
+    </div>
+  );
+}
+
 // ─── ProfileTab ───────────────────────────────────────────────────────────────
 function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHairColor,season,savedColors,onSave,reflexes,setReflexes}){
   const T=useT();
   const[picker,setPicker]=useState(null);
   const slots=[
-    {key:"skin",label:"Incarnato",val:skinColor,set:setSkinColor,saved:savedColors.skin,reflexOptions:SKIN_REFLEXES,reflexKey:"skin"},
-    {key:"eye", label:"Occhi",    val:eyeColor, set:setEyeColor, saved:savedColors.eye, reflexOptions:EYE_REFLEXES, reflexKey:"eye"},
-    {key:"hair",label:"Capelli",  val:hairColor,set:setHairColor,saved:savedColors.hair,reflexOptions:HAIR_REFLEXES,reflexKey:"hair"},
+    {key:"skin",label:"Incarnato",val:skinColor,set:setSkinColor,saved:savedColors.skin,reflexOptions:UNDERTONE_OPTIONS,reflexKey:"skin",reflexLabel:"Sottotono"},
+    {key:"eye", label:"Occhi",    val:eyeColor, set:setEyeColor, saved:savedColors.eye, reflexOptions:EYE_REFLEXES,      reflexKey:"eye", reflexLabel:"Riflessi"},
+    {key:"hair",label:"Capelli",  val:hairColor,set:setHairColor,saved:savedColors.hair,reflexOptions:HAIR_REFLEXES,     reflexKey:"hair",reflexLabel:"Riflessi"},
   ];
   const swatches=(()=>{
     const p=analyzeProfile(skinColor,eyeColor,hairColor,reflexes);
@@ -545,35 +590,30 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
 
   return(
     <div style={{padding:"1rem"}}>
-      <div style={{borderRadius:24,marginBottom:"1rem",overflow:"hidden",position:"relative",boxShadow:"0 8px 40px rgba(0,0,0,0.28)"}}>
+      <div style={{borderRadius:24,marginBottom:"1rem",overflow:"hidden",boxShadow:"0 8px 40px rgba(0,0,0,0.28)"}}>
         <div style={{background:"linear-gradient(145deg,"+season.grad[0]+","+season.grad[1]+")",padding:"1.5rem 1.25rem 1.25rem",position:"relative"}}>
           <div style={{position:"absolute",top:0,left:0,right:0,height:"50%",background:"linear-gradient(180deg,rgba(255,255,255,0.18) 0%,transparent 100%)",pointerEvents:"none"}}/>
           <div style={{fontSize:28,marginBottom:6}}>{season.emoji}</div>
           <div style={{fontSize:20,fontWeight:800,color:season.text,fontFamily:"Georgia,serif",letterSpacing:"-0.02em",lineHeight:1.1,marginBottom:2}}>{season.name}</div>
           <div style={{fontSize:11,color:season.text,opacity:0.6,marginBottom:4,fontStyle:"italic"}}>{season.nameEn}</div>
           <div style={{fontSize:12,color:season.text,opacity:0.75,marginBottom:"1rem"}}>{season.desc}</div>
-          <div style={{display:"flex",gap:5}}>
-            {swatches.map((c,i)=><div key={i} style={{flex:1,height:20,borderRadius:6,background:c,boxShadow:"0 1px 4px rgba(0,0,0,0.18)"}}/>)}
-          </div>
+          <div style={{display:"flex",gap:5}}>{swatches.map((c,i)=><div key={i} style={{flex:1,height:20,borderRadius:6,background:c}}/>)}</div>
         </div>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:"1rem"}}>
-        {slots.map(({key,label,val,set,saved,reflexOptions,reflexKey})=>(
+        {slots.map(({key,label,val,set,saved,reflexOptions,reflexKey,reflexLabel})=>(
           <div key={key} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,padding:"0.875rem 1rem",border:T.cardB,boxShadow:T.cardS}}>
             <div style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setPicker({key,val,set,saved})}>
               <div style={{width:46,height:46,borderRadius:"50%",background:val,border:"2.5px solid rgba(255,255,255,0.5)",boxShadow:"0 4px 14px rgba(0,0,0,0.22)",flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>{label}</div>
-                <div style={{fontSize:10,fontFamily:"monospace",color:T.text3,marginTop:1}}>{val.toUpperCase()}</div>
-              </div>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{label}</div><div style={{fontSize:10,fontFamily:"monospace",color:T.text3,marginTop:1}}>{val.toUpperCase()}</div></div>
               <ChevronRight size={16} color={T.text3}/>
             </div>
-            <ReflexPicker options={reflexOptions} value={reflexes[reflexKey]||null} onChange={v=>setReflexes(p=>({...p,[reflexKey]:v}))} T={T}/>
+            <ReflexPicker label={reflexLabel} options={reflexOptions} value={reflexes[reflexKey]||null} onChange={v=>setReflexes(p=>({...p,[reflexKey]:v}))} T={T}/>
           </div>
         ))}
       </div>
       <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:14,padding:"0.875rem",fontSize:12,color:T.text2,lineHeight:1.6,border:T.cardB}}>
-        <strong style={{color:T.text}}>Suggerimento:</strong> I riflessi sono opzionali ma migliorano la precisione. Tocca un riflesso selezionato per deselezionarlo.
+        <strong style={{color:T.text}}>Suggerimento:</strong> Sottotono e riflessi sono opzionali ma migliorano la precisione. Tocca per deselezionare.
       </div>
       {picker&&<ColorPickerModal value={picker.val} onClose={()=>setPicker(null)} onChange={c=>picker.set(c)} savedColors={picker.saved} onSave={c=>onSave(picker.key,c)}/>}
     </div>
@@ -581,56 +621,82 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
 }
 
 // ─── WardrobeTab ──────────────────────────────────────────────────────────────
-// Three states per garment: auto | fixed | excluded
 function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onSaveGarment}){
   const T=useT();
-  const[picker,setPicker]=useState(null);
+  const[expanded,setExpanded]=useState(null);
 
-  const cycleMode=(id)=>{
-    setModes(p=>{
-      const cur=p[id]||"auto";
-      const next=cur==="auto"?"fixed":cur==="fixed"?"excluded":"auto";
-      return{...p,[id]:next};
-    });
+  const modeBtn=(gid,m,Icon,label)=>{
+    const active=(modes[gid]||"auto")===m;
+    return(
+      <button onClick={()=>setModes(p=>({...p,[gid]:m}))} style={{padding:"6px 10px",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,transition:"all 0.15s",display:"flex",alignItems:"center",gap:4,background:active?(T.dark?"rgba(255,255,255,0.88)":"rgba(0,0,0,0.78)"):"transparent",color:active?(T.dark?"rgba(0,0,0,0.88)":"rgba(255,255,255,0.95)"):T.text2}}>
+        <Icon size={10}/>{label}
+      </button>
+    );
   };
-
-  const modeStyle=(m,active)=>({
-    padding:"6px 10px",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,
-    transition:"all 0.15s",display:"flex",alignItems:"center",gap:4,
-    background:active?(T.dark?"rgba(255,255,255,0.88)":"rgba(0,0,0,0.78)"):"transparent",
-    color:active?(T.dark?"rgba(0,0,0,0.88)":"rgba(255,255,255,0.95)"):T.text2,
-  });
 
   return(
     <div style={{padding:"1rem"}}>
       <p style={{fontSize:12,color:T.text2,marginBottom:"0.875rem",lineHeight:1.6}}>
-        <strong style={{color:T.text}}>Auto</strong> = colore suggerito · <strong style={{color:T.text}}>Fisso</strong> = colore tuo · <strong style={{color:T.text}}>Escluso</strong> = non incluso nell'outfit.
+        <strong style={{color:T.text}}>Auto</strong> = suggerito · <strong style={{color:T.text}}>Fisso</strong> = colore tuo · <strong style={{color:T.text}}>Escluso</strong> = non incluso.
       </p>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {GARMENTS.map(g=>{
           const mode=modes[g.id]||"auto";
           const excluded=mode==="excluded";
           const fixed=mode==="fixed";
+          const entry=fixedColors[g.id]||{hex:"#8B7355",secondaries:[],pattern:"solid"};
+          const isExpanded=expanded===g.id;
+
           return(
-            <div key={g.id} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:16,padding:"0.875rem 1rem",border:T.cardB,boxShadow:T.cardS,display:"flex",alignItems:"center",gap:12,opacity:excluded?0.45:1,transition:"opacity 0.2s"}}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:600,color:T.text,textDecoration:excluded?"line-through":"none"}}>{g.label}</div>
-                {fixed&&<div style={{fontSize:11,color:T.text2,marginTop:2}}>{colorName(fixedColors[g.id])} · {fixedColors[g.id].toUpperCase()}</div>}
-                {excluded&&<div style={{fontSize:11,color:T.text3,marginTop:2}}>Non incluso</div>}
+            <div key={g.id} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:16,border:T.cardB,boxShadow:T.cardS,overflow:"hidden",opacity:excluded?0.45:1,transition:"opacity 0.2s"}}>
+              <div style={{padding:"0.875rem 1rem",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:600,color:T.text,textDecoration:excluded?"line-through":"none"}}>{g.label}</div>
+                  {fixed&&!excluded&&(
+                    <div style={{fontSize:11,color:T.text2,marginTop:2}}>
+                      {colorName(entry.hex)}
+                      {(entry.secondaries||[]).length>0&&" + "+(entry.secondaries||[]).length+" col."}
+                      {entry.pattern&&entry.pattern!=="solid"&&" · "+(PATTERN_OPTIONS.find(p=>p.id===entry.pattern)?.label||"")}
+                    </div>
+                  )}
+                  {excluded&&<div style={{fontSize:11,color:T.text3,marginTop:2}}>Non incluso</div>}
+                </div>
+                {fixed&&!excluded&&(
+                  <div style={{display:"flex",gap:3}}>
+                    <div style={{width:28,height:28,borderRadius:7,background:entry.hex,border:"1.5px solid rgba(255,255,255,0.5)",boxShadow:"0 2px 6px rgba(0,0,0,0.18)"}}/>
+                    {(entry.secondaries||[]).map((s,i)=><div key={i} style={{width:28,height:28,borderRadius:7,background:s.hex,border:"1.5px solid rgba(255,255,255,0.5)"}}/>)}
+                  </div>
+                )}
+                <div style={{display:"flex",borderRadius:12,border:T.inputB,overflow:"hidden",flexShrink:0,background:T.input}}>
+                  {modeBtn(g.id,"auto",Sparkles,"Auto")}
+                  {modeBtn(g.id,"fixed",Lock,"Fisso")}
+                  {modeBtn(g.id,"excluded",Minus,"Escludi")}
+                </div>
               </div>
-              {fixed&&(
-                <div style={{width:34,height:34,borderRadius:9,background:fixedColors[g.id],border:"1.5px solid rgba(255,255,255,0.5)",cursor:"pointer",flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}} onClick={()=>setPicker({gid:g.id})}/>
+              {fixed&&!excluded&&(
+                <div>
+                  <button onClick={()=>setExpanded(e=>e===g.id?null:g.id)} style={{width:"100%",padding:"8px 1rem",border:"none",borderTop:"1px solid "+T.sep,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,color:T.text2,fontSize:12}}>
+                    {isExpanded?"Chiudi":"Modifica colori e fantasia"}
+                    <ChevronRight size={12} style={{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.2s"}}/>
+                  </button>
+                  {isExpanded&&(
+                    <div style={{padding:"0.75rem 1rem 1rem",borderTop:"1px solid "+T.sep}}>
+                      <GarmentColorEditor
+                        garment={g}
+                        entry={entry}
+                        onUpdate={e=>setFixedColors(p=>({...p,[g.id]:e}))}
+                        savedGarment={savedGarment[g.id]||[]}
+                        onSaveGarment={c=>onSaveGarment(g.id,c)}
+                        T={T}
+                      />
+                    </div>
+                  )}
+                </div>
               )}
-              <div style={{display:"flex",borderRadius:12,border:T.inputB,overflow:"hidden",flexShrink:0,background:T.input}}>
-                <button onClick={()=>setModes(p=>({...p,[g.id]:"auto"}))} style={{...modeStyle("auto",mode==="auto")}}><Sparkles size={10}/></button>
-                <button onClick={()=>setModes(p=>({...p,[g.id]:"fixed"}))} style={{...modeStyle("fixed",mode==="fixed")}}><Lock size={10}/></button>
-                <button onClick={()=>setModes(p=>({...p,[g.id]:"excluded"}))} style={{...modeStyle("excluded",mode==="excluded")}}><Minus size={10}/></button>
-              </div>
             </div>
           );
         })}
       </div>
-      {picker&&<ColorPickerModal value={fixedColors[picker.gid]} onClose={()=>setPicker(null)} onChange={c=>setFixedColors(p=>({...p,[picker.gid]:c}))} savedColors={savedGarment[picker.gid]||[]} onSave={c=>onSaveGarment(picker.gid,c)}/>}
     </div>
   );
 }
@@ -657,7 +723,7 @@ function OutfitCard({combo,index}){
         <div style={{borderTop:"1px solid "+T.sep,padding:"0.875rem 1.125rem",background:T.dark?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.3)"}}>
           {combo.items.map((item,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:10,marginBottom:10,borderBottom:i<combo.items.length-1?"1px solid "+T.sep:"none"}}>
-              <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",boxShadow:"0 1px 4px rgba(0,0,0,0.15)",flexShrink:0}}/>
+              <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.text}}>
                   {GARMENTS.find(g=>g.id===item.id)?.short||item.id}
@@ -695,7 +761,7 @@ function ResultsTab({combos,comboCount,setComboCount,onRefresh,season}){
         <span style={{fontSize:11,color:T.text3,fontStyle:"italic"}}>{season.nameEn}</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {combos.slice(0,comboCount).map((combo,i)=><OutfitCard key={combo.type+"-"+i+"-"+combo.seed} combo={combo} index={i}/>)}
+        {combos.slice(0,comboCount).map((combo,i)=><OutfitCard key={combo.type+"-"+i} combo={combo} index={i}/>)}
       </div>
       <div style={{marginTop:"1rem",fontSize:11,color:T.text3,textAlign:"center"}}>Tocca una card per i dettagli colore</div>
     </div>
@@ -704,7 +770,7 @@ function ResultsTab({combos,comboCount,setComboCount,onRefresh,season}){
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App(){
-  const[dark,setDark]=useState(()=>lsGet("chs_dark",!!(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)));
+  const[dark,toggleDark]=useDarkMode();
   const[tab,setTab]=useState("profile");
   const[skinColor,setSkinColor]=useState(()=>lsGet("chs_skinColor","#D4A574"));
   const[eyeColor,setEyeColor]=useState(()=>lsGet("chs_eyeColor","#6B4423"));
@@ -712,7 +778,8 @@ export default function App(){
   const[savedColors,setSavedColors]=useState(()=>lsGet("chs_savedColors",{skin:[],eye:[],hair:[]}));
   const[reflexes,setReflexes]=useState(()=>lsGet("chs_reflexes",{skin:null,eye:null,hair:null}));
   const[modes,setModes]=useState(()=>lsGet("chs_modes",Object.fromEntries(GARMENTS.map(g=>[g.id,"auto"]))));
-  const[fixedColors,setFixedColors]=useState(()=>lsGet("chs_fixedColors",Object.fromEntries(GARMENTS.map(g=>[g.id,"#8B7355"]))));
+  // fixedColors now stores {hex, secondaries:[{hex,pct}], pattern} per garment
+  const[fixedColors,setFixedColors]=useState(()=>lsGet("chs_fixedColors",Object.fromEntries(GARMENTS.map(g=>[g.id,{hex:"#8B7355",secondaries:[],pattern:"solid"}]))));
   const[savedGarment,setSavedGarment]=useState(()=>lsGet("chs_savedGarment",Object.fromEntries(GARMENTS.map(g=>[g.id,[]]))));
   const[comboCount,setComboCount]=useState(()=>lsGet("chs_comboCount",5));
   const[combos,setCombos]=useState([]);
@@ -722,7 +789,6 @@ export default function App(){
   const season=detectSeason(skinColor,eyeColor,hairColor,reflexes);
 
   useEffect(()=>{const meta=document.querySelector("meta[name=theme-color]");if(meta)meta.setAttribute("content",dark?"#000000":"#f2f2f7");},[dark]);
-  useEffect(()=>{lsSet("chs_dark",dark);},[dark]);
   useEffect(()=>{lsSet("chs_skinColor",skinColor);},[skinColor]);
   useEffect(()=>{lsSet("chs_eyeColor",eyeColor);},[eyeColor]);
   useEffect(()=>{lsSet("chs_hairColor",hairColor);},[hairColor]);
@@ -733,18 +799,15 @@ export default function App(){
   useEffect(()=>{lsSet("chs_savedGarment",savedGarment);},[savedGarment]);
   useEffect(()=>{lsSet("chs_comboCount",comboCount);},[comboCount]);
 
-  const fixedMap=Object.fromEntries(GARMENTS.filter(g=>modes[g.id]==="fixed").map(g=>[g.id,fixedColors[g.id]]));
+  const fixedMap=Object.fromEntries(GARMENTS.filter(g=>modes[g.id]==="fixed").map(g=>[g.id,fixedColors[g.id]||{hex:"#8B7355",secondaries:[],pattern:"solid"}]));
   const excludedIds=GARMENTS.filter(g=>modes[g.id]==="excluded").map(g=>g.id);
 
   const generate=useCallback(()=>{
     const profile=analyzeProfile(skinColor,eyeColor,hairColor,reflexes);
-    // Each harmony gets a unique seed based on refreshKey + index
-    // so refresh always produces new variety
-    const baseSeed=refreshKey*1000+Date.now()%1000;
-    setCombos(HARMONIES.slice(0,10).map((h,i)=>({
+    const baseSeed=(refreshKey+1)*99991+Date.now()%9973;
+    setCombos(HARMONIES.map((h,i)=>({
       type:h.id,
-      seed:baseSeed+i,
-      items:generateCombo(h.id,profile,fixedMap,excludedIds,season,baseSeed+i),
+      items:generateCombo(h.id,profile,fixedMap,excludedIds,season,baseSeed+i*7),
     })));
   },[skinColor,eyeColor,hairColor,JSON.stringify(reflexes),JSON.stringify(fixedMap),JSON.stringify(excludedIds),season.base,season.sub,refreshKey]);
 
@@ -753,15 +816,8 @@ export default function App(){
   const handleSaveColor=(key,color)=>setSavedColors(p=>({...p,[key]:[...new Set([...p[key],color])].slice(0,8)}));
   const handleSaveGarment=(gid,color)=>setSavedGarment(p=>({...p,[gid]:[...new Set([...p[gid],color])].slice(0,6)}));
 
-  const TABS=[
-    {id:"profile",  label:"Profilo",    Icon:User},
-    {id:"wardrobe", label:"Guardaroba", Icon:Shirt},
-    {id:"results",  label:"Outfit",     Icon:LayoutGrid},
-  ];
-
-  const bg=dark
-    ?(season.undertone==="warm"?"linear-gradient(180deg,#1a0c06 0%,#0a0602 60%,#000 100%)":"linear-gradient(180deg,#060818 0%,#020408 60%,#000 100%)")
-    :(season.undertone==="warm"?"linear-gradient(180deg,#fdf6ee 0%,#f2ece4 100%)":"linear-gradient(180deg,#eff2fa 0%,#e8ecf5 100%)");
+  const TABS=[{id:"profile",label:"Profilo",Icon:User},{id:"wardrobe",label:"Guardaroba",Icon:Shirt},{id:"results",label:"Outfit",Icon:LayoutGrid}];
+  const bg=dark?(season.undertone==="warm"?"linear-gradient(180deg,#1a0c06 0%,#0a0602 60%,#000 100%)":"linear-gradient(180deg,#060818 0%,#020408 60%,#000 100%)"):(season.undertone==="warm"?"linear-gradient(180deg,#fdf6ee 0%,#f2ece4 100%)":"linear-gradient(180deg,#eff2fa 0%,#e8ecf5 100%)");
 
   return(
     <ThemeCtx.Provider value={T}>
@@ -773,7 +829,7 @@ export default function App(){
                 <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:T.text,letterSpacing:"-0.03em",lineHeight:1}}>Color Harmony</div>
                 <div style={{fontSize:12,color:T.text2,marginTop:4}}>{season.emoji} {season.name}</div>
               </div>
-              <button onClick={()=>setDark(d=>!d)} style={{width:36,height:36,borderRadius:"50%",border:T.cardB,background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:T.cardS,flexShrink:0,marginTop:4}}>
+              <button onClick={toggleDark} style={{width:36,height:36,borderRadius:"50%",border:T.cardB,background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:T.cardS,flexShrink:0,marginTop:4}}>
                 {dark?<Sun size={16} color={T.text}/>:<Moon size={16} color={T.text}/>}
               </button>
             </div>
