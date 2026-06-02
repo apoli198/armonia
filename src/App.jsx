@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext } from "react";
 import ReactDOM from "react-dom";
-import { RefreshCw, ChevronRight, Save, Sparkles, Lock, User, Shirt, LayoutGrid, X, Check, Sun, Moon, Minus, Plus, Trash2 } from "lucide-react";
+import { RefreshCw, ChevronRight, Save, Sparkles, Lock, User, Shirt, LayoutGrid, X, Check, Sun, Moon, Minus, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 // ─── Color math ───────────────────────────────────────────────────────────────
 function hexToHsl(hex){
@@ -27,12 +27,51 @@ function contrastColor(hex){
   return(0.299*r+0.587*g+0.114*b)>145?"rgba(0,0,0,0.85)":"rgba(255,255,255,0.95)";
 }
 
+// ─── Season fit check ─────────────────────────────────────────────────────────
+// Returns "ok" | "caution" | "clash"
+function colorSeasonFit(hex,profile){
+  if(!profile)return"ok";
+  const[h,s,l]=hexToHsl(hex);
+  const lMin=profile.depth==="deep"?15:30;
+  const lMax=profile.depth==="deep"?65:85;
+  let p=0;
+  // Lightness vs depth
+  if(l<lMin-15||l>lMax+15)p+=2;
+  else if(l<lMin-6||l>lMax+6)p+=1;
+  // Chromatic checks
+  if(s>15){
+    // Saturation vs intensity
+    if(profile.intensity==="low"&&s>65)p+=2;
+    else if(profile.intensity==="low"&&s>45)p+=1;
+    // Hue vs undertone (rough)
+    const isWarmHue=h<60||h>300;
+    const isCoolHue=h>170&&h<290;
+    if(profile.undertone==="warm"&&isCoolHue&&s>35)p+=1;
+    if(profile.undertone==="cool"&&isWarmHue&&s>35)p+=1;
+  }
+  if(p===0)return"ok";
+  if(p<=1)return"caution";
+  return"clash";
+}
+
+function FitBadge({fit}){
+  if(fit==="ok")return null;
+  const bg=fit==="caution"?"#D4870A":"#C03030";
+  const label=fit==="caution"?"Fuori palette":"Colore distante";
+  return(
+    <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,
+      background:bg,color:"#fff",letterSpacing:"0.04em",flexShrink:0}}>
+      {label}
+    </span>
+  );
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 function normalizeEntry(v){
   if(!v)return{hex:"#8B7355",secondaries:[],pattern:"solid"};
   if(typeof v==="string")return{hex:v,secondaries:[],pattern:"solid"};
   return{hex:v.hex||"#8B7355",secondaries:v.secondaries||[],pattern:v.pattern||"solid"};
 }
-
 function avgHue(weightedHues){
   const total=weightedHues.reduce((a,{w})=>a+w,0);
   if(!total)return 0;
@@ -40,7 +79,6 @@ function avgHue(weightedHues){
   const sy=weightedHues.reduce((a,{h,w})=>a+Math.sin(h*Math.PI/180)*w,0);
   return(((Math.atan2(sy/total,sx/total)*180/Math.PI)%360)+360)%360;
 }
-
 function seededRand(seed){
   let s=seed;
   return()=>{s=(s*1664525+1013904223)&0xffffffff;return(s>>>0)/0xffffffff;};
@@ -257,7 +295,6 @@ function makeTheme(dark){
 function useDarkMode(){
   const sysDark=()=>window.matchMedia?.("(prefers-color-scheme: dark)").matches||false;
   const[dark,setDark]=useState(sysDark);
-
   useEffect(()=>{
     setDark(sysDark());
     const mq=window.matchMedia?.("(prefers-color-scheme: dark)");
@@ -266,7 +303,6 @@ function useDarkMode(){
     mq.addEventListener("change",handler);
     return()=>mq.removeEventListener("change",handler);
   },[]);
-
   const toggle=useCallback(()=>setDark(d=>!d),[]);
   return[dark,toggle];
 }
@@ -319,8 +355,10 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
       const dpr=window.devicePixelRatio||1;
       const cssW=container.clientWidth;
       const cssH=Math.round(cssW*(3/4));
-      cv.style.width=cssW+"px";cv.style.height=cssH+"px";
-      cv.width=Math.round(cssW*dpr);cv.height=Math.round(cssH*dpr);
+      cv.style.width=cssW+"px";
+      cv.style.height=cssH+"px";
+      cv.width=Math.round(cssW*dpr);
+      cv.height=Math.round(cssH*dpr);
       canvasSize.current={w:cssW,h:cssH};
       const ctx=cv.getContext("2d");
       ctx.fillStyle="#000";ctx.fillRect(0,0,cv.width,cv.height);
@@ -333,13 +371,17 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   },[]);
   useEffect(()=>{if(imgSrc)drawImage(imgSrc);},[imgSrc,drawImage]);
 
+  // Convert clientX/Y (viewport coords) → CSS coords relative to canvas
+  // Uses the canvas element's own getBoundingClientRect — no scroll offset needed
   const toCss=useCallback((clientX,clientY)=>{
     const cv=canvasRef.current;if(!cv)return{x:0,y:0};
     const rect=cv.getBoundingClientRect();
-    return{
-      x:Math.max(0,Math.min(canvasSize.current.w,clientX-rect.left)),
-      y:Math.max(0,Math.min(canvasSize.current.h,clientY-rect.top)),
-    };
+    // rect.left/top are already in viewport coords — clientX/Y are too
+    // So the subtraction is exact, no scroll correction required
+    const x=clientX-rect.left;
+    const y=clientY-rect.top;
+    const{w,h}=canvasSize.current;
+    return{x:Math.max(0,Math.min(w,x)),y:Math.max(0,Math.min(h,y))};
   },[]);
 
   const pick=useCallback((cssX,cssY)=>{
@@ -358,11 +400,82 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
     setLocal(hex);setZoom({visible:true,x:cssX,y:cssY,color:hex});
   },[]);
 
-  const onTS=useCallback(e=>{e.preventDefault();isDragging.current=true;const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);},[pick,toCss]);
-  const onTM=useCallback(e=>{if(!isDragging.current)return;e.preventDefault();const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);},[pick,toCss]);
-  const onTE=useCallback(e=>{e.preventDefault();isDragging.current=false;setTimeout(()=>setZoom(z=>({...z,visible:false})),900);},[]);
-  const onCK=useCallback(e=>{const{x,y}=toCss(e.clientX,e.clientY);pick(x,y);setTimeout(()=>setZoom(z=>({...z,visible:false})),900);},[pick,toCss]);
-  const handleFile=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setImgSrc(ev.target.result);setMode("image");};r.readAsDataURL(f);};
+  const onTS=useCallback(e=>{
+    e.preventDefault();isDragging.current=true;
+    const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);
+  },[pick,toCss]);
+  const onTM=useCallback(e=>{
+    if(!isDragging.current)return;e.preventDefault();
+    const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);
+  },[pick,toCss]);
+  const onTE=useCallback(e=>{
+    e.preventDefault();isDragging.current=false;
+    setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);
+  },[]);
+  const onCK=useCallback(e=>{
+    const{x,y}=toCss(e.clientX,e.clientY);pick(x,y);
+    setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);
+  },[pick,toCss]);
+  const handleFile=e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{setImgSrc(ev.target.result);setMode("image");};
+    r.readAsDataURL(f);
+  };
+
+  // Zoom bubble: crosshair at exact point + color preview floating above/below
+  const ZoomOverlay=zoom.visible&&(()=>{
+    const{w,h}=canvasSize.current;
+    const bubbleW=60,bubbleH=60;
+    // Float above if in lower half, below if in upper half
+    const showAbove=zoom.y>h*0.45;
+    const bubbleTop=showAbove
+      ?Math.max(2,zoom.y-80)
+      :Math.min(h-bubbleH-2,zoom.y+26);
+    const bubbleLeft=Math.max(2,Math.min(zoom.x-bubbleW/2,w-bubbleW-2));
+    return(
+      <>
+        {/* Crosshair ring — always exactly at touch point */}
+        <div style={{
+          position:"absolute",
+          left:zoom.x-13,top:zoom.y-13,
+          width:26,height:26,
+          borderRadius:"50%",
+          border:"2px solid rgba(255,255,255,0.95)",
+          boxShadow:"0 0 0 1.5px rgba(0,0,0,0.7)",
+          pointerEvents:"none",
+        }}/>
+        {/* Small center dot */}
+        <div style={{
+          position:"absolute",
+          left:zoom.x-2,top:zoom.y-2,
+          width:4,height:4,
+          borderRadius:"50%",
+          background:"rgba(255,255,255,0.9)",
+          boxShadow:"0 0 0 1px rgba(0,0,0,0.6)",
+          pointerEvents:"none",
+        }}/>
+        {/* Color preview bubble — floats above or below, never overlaps crosshair */}
+        <div style={{
+          position:"absolute",
+          left:bubbleLeft,top:bubbleTop,
+          width:bubbleW,height:bubbleH,
+          borderRadius:"50%",
+          background:zoom.color,
+          border:"3px solid rgba(255,255,255,0.95)",
+          boxShadow:"0 4px 20px rgba(0,0,0,0.45)",
+          pointerEvents:"none",
+          display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",gap:2,
+        }}>
+          <div style={{width:7,height:7,borderRadius:"50%",background:contrastColor(zoom.color),opacity:0.65}}/>
+          <div style={{fontSize:6,fontFamily:"monospace",color:contrastColor(zoom.color),opacity:0.8,letterSpacing:"0.03em"}}>
+            {zoom.color.toUpperCase()}
+          </div>
+        </div>
+      </>
+    );
+  })();
 
   const sheet=(
     <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:T.modalOvl,backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}} onClick={onClose}>
@@ -403,23 +516,18 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               ):(
                 <div>
                   <div style={{fontSize:12,color:T.text2,marginBottom:8,textAlign:"center"}}>👆 Tocca e trascina per campionare</div>
-                  <div ref={containerRef} style={{width:"100%",borderRadius:14,overflow:"hidden",border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(0,0,0,0.1)",touchAction:"none",background:"#000",position:"relative"}}>
+                  <div
+                    ref={containerRef}
+                    style={{width:"100%",position:"relative",borderRadius:14,overflow:"hidden",
+                      border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(0,0,0,0.1)",
+                      touchAction:"none",background:"#000"}}
+                  >
                     <canvas
                       ref={canvasRef}
                       style={{display:"block",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}}
                       onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}
                     />
-                    {zoom.visible&&(
-                      <div style={{position:"absolute",
-                        left:Math.max(36,Math.min(zoom.x-32,(canvasSize.current.w||300)-68)),
-                        top:Math.max(4,zoom.y-84),
-                        width:64,height:64,borderRadius:"50%",background:zoom.color,
-                        border:"3px solid rgba(255,255,255,0.9)",boxShadow:"0 4px 20px rgba(0,0,0,0.4)",
-                        pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:contrastColor(zoom.color),opacity:0.6}}/>
-                        <div style={{fontSize:7,fontFamily:"monospace",color:contrastColor(zoom.color),opacity:0.75}}>{zoom.color.toUpperCase()}</div>
-                      </div>
-                    )}
+                    {ZoomOverlay}
                   </div>
                   <button onClick={()=>{setImgSrc(null);if(fileRef.current)fileRef.current.value="";}} style={{marginTop:8,width:"100%",padding:"9px",border:T.inputB,borderRadius:10,background:T.input,cursor:"pointer",fontSize:12,color:T.text2}}>Cambia foto</button>
                 </div>
@@ -452,7 +560,6 @@ function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
   const[pickerTarget,setPickerTarget]=useState(null);
   const e=normalizeEntry(entry);
   const primaryPct=100-(e.secondaries||[]).reduce((a,s)=>a+s.pct,0);
-
   const addSecondary=()=>{
     if((e.secondaries||[]).length>=2)return;
     onUpdate({...e,secondaries:[...(e.secondaries||[]),{hex:["#8B7355","#4A6080"][(e.secondaries||[]).length],pct:20}]});
@@ -465,7 +572,6 @@ function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
     s[i]={...s[i],pct:Math.max(5,Math.min(maxPct,pct))};
     onUpdate({...e,secondaries:s});
   };
-
   return(
     <div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -497,7 +603,7 @@ function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {PATTERN_OPTIONS.map(p=>{
             const active=(e.pattern||"solid")===p.id;
-            return <button key={p.id} onClick={()=>onUpdate({...e,pattern:p.id})} style={{padding:"4px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{p.label}</button>;
+            return<button key={p.id} onClick={()=>onUpdate({...e,pattern:p.id})} style={{padding:"4px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{p.label}</button>;
           })}
         </div>
       </div>
@@ -520,7 +626,6 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
     const p=analyzeProfile(skinColor,eyeColor,hairColor,reflexes);
     return buildHarmonyPool("analog",(SEASON_ANCHORS[season.base]||SEASON_ANCHORS.autumn)[0],p,0).slice(0,6);
   })();
-
   return(
     <div style={{padding:"1rem"}}>
       <div style={{borderRadius:24,marginBottom:"1rem",overflow:"hidden",boxShadow:"0 8px 40px rgba(0,0,0,0.28)"}}>
@@ -554,10 +659,9 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
 }
 
 // ─── WardrobeTab ──────────────────────────────────────────────────────────────
-function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onSaveGarment}){
+function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onSaveGarment,season}){
   const T=useT();
   const[expandedId,setExpandedId]=useState(null);
-
   return(
     <div style={{padding:"1rem"}}>
       <p style={{fontSize:12,color:T.text2,marginBottom:"0.875rem",lineHeight:1.6}}>
@@ -569,7 +673,7 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
           const excluded=mode==="excluded",fixed=mode==="fixed";
           const entry=normalizeEntry(fixedColors[g.id]);
           const isExp=expandedId===g.id;
-
+          const fit=fixed?colorSeasonFit(entry.hex,season):null;
           const mBtn=(m,Icon,label)=>{
             const active=mode===m;
             return(
@@ -578,12 +682,14 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
               </button>
             );
           };
-
           return(
             <div key={g.id} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:16,border:T.cardB,boxShadow:T.cardS,overflow:"hidden",opacity:excluded?0.45:1,transition:"opacity 0.2s"}}>
               <div style={{padding:"0.875rem 1rem",display:"flex",alignItems:"center",gap:12}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:600,color:T.text,textDecoration:excluded?"line-through":"none"}}>{g.label}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    <div style={{fontSize:14,fontWeight:600,color:T.text,textDecoration:excluded?"line-through":"none"}}>{g.label}</div>
+                    {fit&&fit!=="ok"&&<FitBadge fit={fit}/>}
+                  </div>
                   {fixed&&!excluded&&(
                     <div style={{fontSize:11,color:T.text2,marginTop:2}}>
                       {colorName(entry.hex)}
@@ -613,13 +719,7 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
                   </button>
                   {isExp&&(
                     <div style={{padding:"0.75rem 1rem 1rem",borderTop:"1px solid "+T.sep}}>
-                      <GarmentColorEditor
-                        entry={entry}
-                        onUpdate={e=>setFixedColors(p=>({...p,[g.id]:e}))}
-                        savedGarment={savedGarment[g.id]||[]}
-                        onSaveGarment={c=>onSaveGarment(g.id,c)}
-                        T={T}
-                      />
+                      <GarmentColorEditor entry={entry} onUpdate={e=>setFixedColors(p=>({...p,[g.id]:e}))} savedGarment={savedGarment[g.id]||[]} onSaveGarment={c=>onSaveGarment(g.id,c)} T={T}/>
                     </div>
                   )}
                 </>
@@ -633,16 +733,27 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
 }
 
 // ─── OutfitCard ───────────────────────────────────────────────────────────────
-function OutfitCard({combo,index}){
+function OutfitCard({combo,index,profile}){
   const T=useT();
   const[expanded,setExpanded]=useState(false);
   const h=HARMONIES.find(h=>h.id===combo.type);
+  // Count clashes among all items for the compact header
+  const clashCount=combo.items.filter(item=>{
+    const fit=colorSeasonFit(item.hex,profile);
+    return fit==="clash"||(item.fixed&&fit==="caution");
+  }).length;
   return(
     <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:20,border:T.cardB,boxShadow:T.cardS,overflow:"hidden"}}>
       <div style={{padding:"1rem 1.125rem",cursor:"pointer"}} onClick={()=>setExpanded(e=>!e)}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
           <span style={{fontSize:10,fontFamily:"monospace",color:T.text3,fontWeight:700}}>{String(index+1).padStart(2,"0")}</span>
           <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"Georgia,serif",flex:1}}>{h?.name}</span>
+          {clashCount>0&&(
+            <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:6,background:"rgba(200,60,40,0.15)",border:"1px solid rgba(200,60,40,0.3)"}}>
+              <AlertTriangle size={9} color="#C03030"/>
+              <span style={{fontSize:9,fontWeight:700,color:"#C03030"}}>{clashCount}</span>
+            </div>
+          )}
           <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",padding:"3px 7px",borderRadius:6,background:T.input,color:T.text2}}>{h?.tag}</div>
           <ChevronRight size={14} color={T.text3} style={{transform:expanded?"rotate(90deg)":"none",transition:"transform 0.2s"}}/>
         </div>
@@ -652,19 +763,25 @@ function OutfitCard({combo,index}){
       </div>
       {expanded&&(
         <div style={{borderTop:"1px solid "+T.sep,padding:"0.875rem 1.125rem",background:T.dark?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.3)"}}>
-          {combo.items.map((item,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:10,marginBottom:10,borderBottom:i<combo.items.length-1?"1px solid "+T.sep:"none"}}>
-              <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.text}}>
-                  {GARMENTS.find(g=>g.id===item.id)?.short||item.id}
-                  {item.fixed&&<span style={{marginLeft:5,fontSize:9,color:T.text2,background:T.input,padding:"1px 6px",borderRadius:4,fontWeight:700}}>FISSO</span>}
+          {combo.items.map((item,i)=>{
+            const fit=colorSeasonFit(item.hex,profile);
+            return(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:10,marginBottom:10,borderBottom:i<combo.items.length-1?"1px solid "+T.sep:"none"}}>
+                <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>
+                      {GARMENTS.find(g=>g.id===item.id)?.short||item.id}
+                    </span>
+                    {item.fixed&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>FISSO</span>}
+                    {fit!=="ok"&&<FitBadge fit={fit}/>}
+                  </div>
+                  <div style={{fontSize:11,color:T.text2}}>{item.name}</div>
                 </div>
-                <div style={{fontSize:11,color:T.text2}}>{item.name}</div>
+                <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{item.hex.toUpperCase()}</div>
               </div>
-              <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{item.hex.toUpperCase()}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -692,9 +809,11 @@ function ResultsTab({combos,comboCount,setComboCount,onRefresh,season}){
         <span style={{fontSize:11,color:T.text3,fontStyle:"italic"}}>{season.nameEn}</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {combos.slice(0,comboCount).map((combo,i)=><OutfitCard key={combo.type+"-"+i} combo={combo} index={i}/>)}
+        {combos.slice(0,comboCount).map((combo,i)=>(
+          <OutfitCard key={combo.type+"-"+i} combo={combo} index={i} profile={season}/>
+        ))}
       </div>
-      <div style={{marginTop:"1rem",fontSize:11,color:T.text3,textAlign:"center"}}>Tocca una card per i dettagli colore</div>
+      <div style={{marginTop:"1rem",fontSize:11,color:T.text3,textAlign:"center"}}>Tocca una card per i dettagli · <AlertTriangle size={9} style={{verticalAlign:"middle"}}/> = colore fuori stagione</div>
     </div>
   );
 }
@@ -766,7 +885,7 @@ export default function App(){
               </button>
             </div>
             {tab==="profile"&&<ProfileTab skinColor={skinColor} setSkinColor={setSkinColor} eyeColor={eyeColor} setEyeColor={setEyeColor} hairColor={hairColor} setHairColor={setHairColor} season={season} savedColors={savedColors} onSave={handleSaveColor} reflexes={reflexes} setReflexes={setReflexes}/>}
-            {tab==="wardrobe"&&<WardrobeTab modes={modes} setModes={setModes} fixedColors={fixedColors} setFixedColors={setFixedColors} savedGarment={savedGarment} onSaveGarment={handleSaveGarment}/>}
+            {tab==="wardrobe"&&<WardrobeTab modes={modes} setModes={setModes} fixedColors={fixedColors} setFixedColors={setFixedColors} savedGarment={savedGarment} onSaveGarment={handleSaveGarment} season={season}/>}
             {tab==="results"&&<ResultsTab combos={combos} comboCount={comboCount} setComboCount={setComboCount} onRefresh={()=>setRefreshKey(k=>k+1)} season={season}/>}
           </div>
         </div>
