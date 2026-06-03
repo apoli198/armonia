@@ -34,7 +34,6 @@ const GARMENT_BASE_WEIGHTS={
 function computeGarmentWeights(presentIds){
   const w={};
   for(const id of presentIds)w[id]=GARMENT_BASE_WEIGHTS[id]||8;
-  // Layer dynamics: outer layers make inner layers less visible
   if(presentIds.includes("giubbotto")){
     if(w.felpa !==undefined)w.felpa *=0.35;
     if(w.maglia!==undefined)w.maglia*=0.12;
@@ -48,23 +47,25 @@ function computeGarmentWeights(presentIds){
 }
 
 // ─── Season fit ranges (saturation and lightness per sub-season) ──────────────
+// MODIFICATO: Valori calibrati su saturazioni realistiche da tessuto (max ~62 HSL).
+// I range schermo vengono compressi via screenToFabricSat() prima della valutazione.
 const SEASON_SAT_RANGES={
-  "spring-bright": {min:55,max:90},
-  "spring-light":  {min:30,max:68},
-  "spring-warm":   {min:38,max:75},
-  "spring-true":   {min:38,max:75},
-  "summer-soft":   {min:12,max:42},
-  "summer-light":  {min:20,max:55},
-  "summer-cool":   {min:22,max:58},
-  "summer-true":   {min:22,max:55},
-  "autumn-deep":   {min:28,max:72},
-  "autumn-warm":   {min:32,max:70},
-  "autumn-soft":   {min:18,max:48},
-  "autumn-true":   {min:28,max:65},
-  "winter-bright": {min:62,max:95},
-  "winter-cool":   {min:42,max:82},
-  "winter-deep":   {min:38,max:80},
-  "winter-true":   {min:48,max:85},
+  "spring-bright": {min:40,max:62},
+  "spring-light":  {min:22,max:52},
+  "spring-warm":   {min:28,max:55},
+  "spring-true":   {min:28,max:55},
+  "summer-soft":   {min:8, max:30},
+  "summer-light":  {min:14,max:40},
+  "summer-cool":   {min:16,max:44},
+  "summer-true":   {min:16,max:42},
+  "autumn-deep":   {min:22,max:55},
+  "autumn-warm":   {min:25,max:52},
+  "autumn-soft":   {min:10,max:36},
+  "autumn-true":   {min:20,max:50},
+  "winter-bright": {min:45,max:62},
+  "winter-cool":   {min:30,max:58},
+  "winter-deep":   {min:28,max:58},
+  "winter-true":   {min:36,max:62},
 };
 const SEASON_LIGHT_RANGES={
   "spring-bright": {min:35,max:85},
@@ -86,48 +87,57 @@ const SEASON_LIGHT_RANGES={
 };
 
 // ─── Color fit evaluation ─────────────────────────────────────────────────────
-// Neutrals: near-black (l<15, s<15), near-white (l>88, s<12), mid-grey (s<10)
-// Fit depends on what surrounds them, not on the season.
+// NUOVO: screenToFabricSat comprime la saturazione schermo (0-100) verso il range
+// realistico dei tessuti (~0-62). Colori neon → vivaci ma indossabili.
+function screenToFabricSat(s){
+  if(s<=55)return s;
+  return 55+(s-55)*0.20;
+}
+
+// MODIFICATO: Neutrals con soglie fabric-aware
+// Fit dipende dal contesto dell'outfit, non dalla stagione.
 function evaluateNeutralFit(l,isNearBlack,isNearWhite,comboHexes){
   if(isNearBlack){
-    // Near-black + chromatic dark (navy, dark burgundy...) → depth clash
-    const darkChromatic=comboHexes.filter(c=>{const[,cs,cl]=hexToHsl(c);return cl<35&&cs>30;});
+    // Near-black + cromatico scuro (navy, bordò...) → depth clash
+    const darkChromatic=comboHexes.filter(c=>{const[,cs,cl]=hexToHsl(c);return cl<35&&cs>25;});
     if(darkChromatic.length>0)return"caution";
-    // Near-black + another near-black at very similar lightness → monotone risk
-    // (monochromatic graded darks are fine — only identical pitch-black pairs are dull)
     return"ok";
   }
   if(isNearWhite){
-    const veryHighSat=comboHexes.filter(c=>hexToHsl(c)[1]>78);
+    // Soglie su fabric-sat, non su sat schermo raw
+    const veryHighSat=comboHexes.filter(c=>screenToFabricSat(hexToHsl(c)[1])>52);
     if(veryHighSat.length>0)return"caution";
-    const highSat=comboHexes.filter(c=>hexToHsl(c)[1]>60);
+    const highSat=comboHexes.filter(c=>screenToFabricSat(hexToHsl(c)[1])>38);
     if(highSat.length>=2)return"caution";
     return"ok";
   }
-  // Mid-grey: universally neutral, always ok
+  // Mid-grey: universalmente neutro
   return"ok";
 }
 
-// Chromatic colors: gradient penalty on sat, lightness, hue/undertone
-function evaluateChromaticFit(h,s,l,season,seasonKey,comboHexes){
+// MODIFICATO: Chromatic con fabric-sat compression e penalty graduale
+// Applica screenToFabricSat prima di confrontare con i range stagione.
+function evaluateChromaticFit(h,s,l,season,seasonKey){
+  const fabricS=screenToFabricSat(s);
   let penalty=0;
-  const satRange =SEASON_SAT_RANGES [seasonKey]||{min:25,max:75};
+  const satRange =SEASON_SAT_RANGES [seasonKey]||{min:20,max:58};
   const lightRange=SEASON_LIGHT_RANGES[seasonKey]||{min:20,max:85};
 
-  // Saturation distance from season range
-  if(s<satRange.min){const d=satRange.min-s;penalty+=d>22?2:1;}
-  else if(s>satRange.max){const d=s-satRange.max;penalty+=d>22?2:1;}
+  // Saturazione: penalità su distanza dal range stagione (in fabric-sat)
+  if(fabricS<satRange.min){const d=satRange.min-fabricS;penalty+=d>20?2:d>10?1:0;}
+  else if(fabricS>satRange.max){const d=fabricS-satRange.max;penalty+=d>20?2:d>10?1:0;}
 
-  // Lightness distance from season range
-  if(l<lightRange.min){const d=lightRange.min-l;penalty+=d>22?2:1;}
-  else if(l>lightRange.max){const d=l-lightRange.max;penalty+=d>22?2:1;}
+  // Lightness: distanza dal range stagione
+  if(l<lightRange.min){const d=lightRange.min-l;penalty+=d>20?2:d>10?1:0;}
+  else if(l>lightRange.max){const d=l-lightRange.max;penalty+=d>20?2:d>10?1:0;}
 
-  // Hue/undertone tension (only meaningful above s>22)
-  if(s>22){
+  // Tensione hue/undertone: attiva solo se fabric-sat è significativa (>30)
+  // e l'opposizione è forte. Colori desaturati non creano tensione undertone.
+  if(fabricS>30){
     const isWarmHue=h<70||h>310;
     const isCoolHue=h>165&&h<280;
-    if(season.undertone==="warm"&&isCoolHue&&s>42)penalty+=1;
-    if(season.undertone==="cool"&&isWarmHue&&s>42)penalty+=1;
+    if(season.undertone==="warm"&&isCoolHue&&fabricS>40)penalty+=1;
+    if(season.undertone==="cool"&&isWarmHue&&fabricS>40)penalty+=1;
   }
 
   if(penalty===0)return"ok";
@@ -135,7 +145,7 @@ function evaluateChromaticFit(h,s,l,season,seasonKey,comboHexes){
   return"clash";
 }
 
-// Main entry point — contextual: receives full outfit hex list for neutral evaluation
+// Main entry point — contestuale: riceve la lista hex dell'outfit per i neutrali
 function colorSeasonFit(hex,season,comboHexes=[],material="normal"){
   const[h,s,l]=hexToHsl(hex);
   const seasonKey=(season.base||"autumn")+"-"+(season.sub||"true");
@@ -153,7 +163,7 @@ function colorSeasonFit(hex,season,comboHexes=[],material="normal"){
   if(s<10)return evaluateNeutralFit(l,isNearBlack,isNearWhite,comboHexes);
 
   // Chromatic path
-  return evaluateChromaticFit(h,s,l,season,seasonKey,comboHexes);
+  return evaluateChromaticFit(h,s,l,season,seasonKey);
 }
 
 function FitBadge({fit}){
@@ -215,6 +225,8 @@ const PATTERN_OPTIONS=[
 ];
 
 // ─── Profile analysis ─────────────────────────────────────────────────────────
+// MODIFICATO: I reflex ora aggiungono punti al calcolo undertone (additivi),
+// non lo sovrascrivono. Questo permette a occhi verdi + reflex nocciola di combinare i segnali.
 function skinUndertone(hex){
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
   const ws=(r-b)+(r-g)*0.5;
@@ -224,33 +236,62 @@ function analyzeProfile(skin,eyes,hair,reflexes){
   const[,sSk,lSk]=hexToHsl(skin);
   const[,sEy]=hexToHsl(eyes);
   const[,sHr,lHr]=hexToHsl(hair);
-  let undertone=skinUndertone(skin);
+  
+  // Undertone: scoring additivo con reflexes
+  // ws è il score grezzo dalla pelle, reflexes aggiungono punti (non sovrascrivono)
+  let ws=(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(5,7),16))+(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(3,5),16))*0.5;
+  
+  // Reflex modifiers: ogni reflex aggiunge/sottrae punti
+  const REFLEX_UT={
+    skin:   {warm:+25,cool:-25,neutral:0},
+    eye:    {golden:+10,green:+3,grey:-10},
+    hair:   {copper:+16,golden:+10,ashy:-12}
+  };
+  
   const skinR=UNDERTONE_OPTIONS.find(r=>r.id===reflexes?.skin);
+  const eyeR =EYE_REFLEXES.find(r=>r.id===reflexes?.eye);
   const hairR=HAIR_REFLEXES.find(r=>r.id===reflexes?.hair);
-  const eyeR=EYE_REFLEXES.find(r=>r.id===reflexes?.eye);
-  if(skinR&&skinR.undertone!=="neutral")undertone=skinR.undertone;
-  else if(skinR?.undertone==="neutral")undertone="neutral";
-  else if(hairR?.undertoneHint)undertone=hairR.undertoneHint;
-  else if(eyeR?.undertoneHint)undertone=eyeR.undertoneHint;
-  else if(lSk>72&&lHr<20&&Math.abs(lSk-lHr)>55)undertone="cool";
-  if(undertone==="neutral"){
-    const ws=(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(5,7),16))+(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(3,5),16))*0.5;
-    undertone=ws>=0?"warm":"cool";
-  }
+  
+  if(skinR&&REFLEX_UT.skin[skinR.id]!==undefined)ws+=REFLEX_UT.skin[skinR.id];
+  if(eyeR &&REFLEX_UT.eye[eyeR.id]!==undefined)ws+=REFLEX_UT.eye[eyeR.id];
+  if(hairR&&REFLEX_UT.hair[hairR.id]!==undefined)ws+=REFLEX_UT.hair[hairR.id];
+  
+  // Resolve undertone dal score composito
+  let undertone;
+  if(ws>18)undertone="warm";
+  else if(ws<-8)undertone="cool";
+  else undertone="neutral";
+  
+  // Neutrali tendono verso warm per default (più persone neutre-warm)
+  if(undertone==="neutral")undertone=ws>=0?"warm":"cool";
+  
   const depthScore=lSk*0.7+lHr*0.3;
   const depth=depthScore<55?"deep":"light";
   const lumContrast=Math.abs(lSk-lHr);
   let intensityScore=(sSk*0.3+sEy*0.4+sHr*0.3)*0.6+lumContrast*0.4;
-  if(hairR?.intensityHint==="high")intensityScore+=12;
-  if(hairR?.intensityHint==="low")intensityScore-=8;
-  if(eyeR?.intensityHint==="high")intensityScore+=10;
-  if(eyeR?.intensityHint==="low")intensityScore-=8;
+  
+  // Intensity reflexes (anche additivi)
+  const REFLEX_INT={
+    eye:  {golden:+10,green:+10,grey:-8},
+    hair: {copper:+12,golden:+7,ashy:-8}
+  };
+  if(eyeR &&REFLEX_INT.eye[eyeR.id]!==undefined)intensityScore+=REFLEX_INT.eye[eyeR.id];
+  if(hairR&&REFLEX_INT.hair[hairR.id]!==undefined)intensityScore+=REFLEX_INT.hair[hairR.id];
+  
   const intensity=intensityScore>28?"high":"low";
-  const undertoneStr=Math.abs((parseInt(skin.slice(1,3),16)-parseInt(skin.slice(5,7),16))+(parseInt(skin.slice(1,3),16)-parseInt(skin.slice(3,5),16))*0.5);
-  const depthStr=Math.abs(depthScore-55),intensityStr=Math.abs(intensityScore-28);
-  const maxStr=Math.max(undertoneStr,depthStr,intensityStr);
+  
+  // Dominant trait
+  const undertoneStr=Math.abs(ws);
+  const depthStr=Math.abs(depthScore-55);
+  const intensityStr=Math.abs(intensityScore-28);
+  const maxStr=Math.max(undertoneStr*0.5,depthStr,intensityStr);
   let dominant="pure";
-  if(maxStr>8){if(undertoneStr===maxStr)dominant="undertone";else if(depthStr===maxStr)dominant="depth";else dominant="intensity";}
+  if(maxStr>8){
+    if(undertoneStr*0.5===maxStr)dominant="undertone";
+    else if(depthStr===maxStr)dominant="depth";
+    else dominant="intensity";
+  }
+  
   return{undertone,depth,intensity,dominant};
 }
 
@@ -284,24 +325,40 @@ function detectSeason(skin,eyes,hair,reflexes){
 const SEASON_ANCHORS={spring:[28,45,15,60,340],summer:[210,240,280,180,310],autumn:[25,40,85,15,200],winter:[220,0,270,180,350]};
 
 // ─── Harmony pool ─────────────────────────────────────────────────────────────
+// MODIFICATO: Ogni harmony type ha un cap di saturazione realistico per tessuti.
+// I colori generati rimangono indossabili, non neon-schermo.
 function buildHarmonyPool(type,anchorH,profile,jitter=0){
+  // Cap di saturazione per armonia (realistico per tessuti)
+  const FABRIC_SAT_CAP={
+    mono:52, analog:52, comp:58, split:50, triad:50,
+    tetrad:50, neutral:50, earth:42, pastel:36, deep:58
+  };
+  const maxS=FABRIC_SAT_CAP[type]||52;
+  
+  // ss: multiplier intensity, ma cappato ai valori realistici
+  const ssBase=profile.intensity==="high"?0.90:0.60;
+  const sHigh=Math.min(maxS,maxS*ssBase);
+  const sMid=Math.min(maxS,maxS*ssBase*0.75);
+  const sLow=Math.min(maxS,maxS*ssBase*0.50);
+  
   const lMin=profile.depth==="deep"?18:32,lMax=profile.depth==="deep"?62:84;
   const cl=l=>Math.max(lMin,Math.min(lMax,l));
-  const ss=profile.intensity==="high"?0.85:0.55;
+  const cs=s=>Math.min(maxS,Math.max(0,s));
   const H=((anchorH+(profile.undertone==="warm"?8:-8)+jitter)%360+360)%360;
   const lMid=cl((lMin+lMax)/2);
+  
   switch(type){
-    case"mono":return Array.from({length:8},(_,i)=>hslToHex(H,Math.min(80,ss*100*(0.6+i*0.05)),cl(lMin+i*((lMax-lMin)/7))));
-    case"analog":return[-50,-28,-12,0,12,28,50,35].map((d,i)=>hslToHex(H+d,ss*80,cl(lMid+[-8,5,12,0,-10,6,-5,8][i])));
-    case"comp":{const c=H+180;return[...[-12,0,12].map((d,i)=>hslToHex(H+d,ss*82,cl(lMid+[8,0,-8][i]))), ...[-10,0,10].map((d,i)=>hslToHex(c+d,ss*78,cl(lMid+[-5,5,0][i]))),hslToHex(H,12,cl(lMax-5)),hslToHex(H,8,cl(lMin+5))];}
-    case"split":return[0,8,-8,150,158,210,218,160].map((d,i)=>{const b=i<3?H:i<5?H+150:i<7?H+210:H+145;return hslToHex(b+(i<3?[0,8,-8][i]:i<5?[0,8][i-3]:i<7?[0,8][i-5]:0),ss*80,cl(lMid+[-3,8,-8,0,6,-5,4,2][i]));});
-    case"triad":return[0,6,-6,120,126,114,240,246].map((d,i)=>hslToHex(H+d,ss*80,cl(lMid+[0,8,-8,4,-6,10,-4,6][i])));
-    case"tetrad":return[0,90,180,270,6,96,186,276].map((d,i)=>hslToHex(H+d,ss*78,cl(lMid+[0,6,-6,3,-3,8,-5,4][i])));
-    case"neutral":{const nH=profile.undertone==="warm"?32:215;return[...Array.from({length:4},(_,i)=>hslToHex(nH,8+i*3,cl(lMin+i*((lMax-lMin)/4)))),hslToHex(H,ss*85,cl(lMid)),hslToHex(H+180,ss*70,cl(lMid+10)),hslToHex(nH,5,cl(lMax-8)),hslToHex(nH,10,cl(lMin+8))];}
-    case"earth":{const eH=profile.undertone==="cool"?[190,200,175,160,215,230,185,170]:[22,35,48,70,15,95,28,42];return eH.map((h,i)=>hslToHex(h,ss*55,cl(28+i*5)));}
-    case"pastel":return Array.from({length:8},(_,i)=>hslToHex(H+i*38,ss*42,cl(lMax-6+i%2*3)));
-    case"deep":return Array.from({length:8},(_,i)=>hslToHex(H+i*28,Math.min(75,ss*110),cl(lMin+i*4)));
-    default:return Array.from({length:8},(_,i)=>hslToHex(H+i*22,ss*75,cl(lMid)));
+    case"mono":return Array.from({length:8},(_,i)=>hslToHex(H,cs(sMid*(0.7+i*0.04)),cl(lMin+i*((lMax-lMin)/7))));
+    case"analog":return[-50,-28,-12,0,12,28,50,35].map((d,i)=>hslToHex(H+d,cs(sMid),cl(lMid+[-8,5,12,0,-10,6,-5,8][i])));
+    case"comp":{const c=H+180;return[...[-12,0,12].map((d,i)=>hslToHex(H+d,cs(sHigh),cl(lMid+[8,0,-8][i]))), ...[-10,0,10].map((d,i)=>hslToHex(c+d,cs(sMid),cl(lMid+[-5,5,0][i]))),hslToHex(H,cs(sLow*0.4),cl(lMax-5)),hslToHex(H,cs(sLow*0.3),cl(lMin+5))];}
+    case"split":return[0,8,-8,150,158,210,218,160].map((d,i)=>{const b=i<3?H:i<5?H+150:i<7?H+210:H+145;return hslToHex(b+(i<3?[0,8,-8][i]:i<5?[0,8][i-3]:i<7?[0,8][i-5]:0),cs(sMid),cl(lMid+[-3,8,-8,0,6,-5,4,2][i]));});
+    case"triad":return[0,6,-6,120,126,114,240,246].map((d,i)=>hslToHex(H+d,cs(sMid),cl(lMid+[0,8,-8,4,-6,10,-4,6][i])));
+    case"tetrad":return[0,90,180,270,6,96,186,276].map((d,i)=>hslToHex(H+d,cs(sMid*0.9),cl(lMid+[0,6,-6,3,-3,8,-5,4][i])));
+    case"neutral":{const nH=profile.undertone==="warm"?32:215;return[...Array.from({length:4},(_,i)=>hslToHex(nH,cs(8+i*3),cl(lMin+i*((lMax-lMin)/4)))),hslToHex(H,cs(sHigh),cl(lMid)),hslToHex(H+180,cs(sMid),cl(lMid+10)),hslToHex(nH,cs(5),cl(lMax-8)),hslToHex(nH,cs(10),cl(lMin+8))];}
+    case"earth":{const eH=profile.undertone==="cool"?[190,200,175,160,215,230,185,170]:[22,35,48,70,15,95,28,42];return eH.map((h,i)=>hslToHex(h,cs(sMid*0.75),cl(28+i*5)));}
+    case"pastel":return Array.from({length:8},(_,i)=>hslToHex(H+i*38,cs(maxS*ssBase*0.6),cl(lMax-6+i%2*3)));
+    case"deep":return Array.from({length:8},(_,i)=>hslToHex(H+i*28,cs(sHigh),cl(lMin+i*4)));
+    default:return Array.from({length:8},(_,i)=>hslToHex(H+i*22,cs(sMid),cl(lMid)));
   }
 }
 
@@ -321,7 +378,6 @@ function generateCombo(type,profile,fixedMap,excludedIds,season,seed){
   const fixedEntries=Object.entries(fixedMap).filter(([id])=>!excludedIds.includes(id));
   let anchorH;
   if(fixedEntries.length>0){
-    // Weight anchor by garment visual weight × internal color percentages
     const weightedHues=fixedEntries.flatMap(([id,entry])=>{
       const gw=(garmentWeights[id]||10)/100;
       return garmentWeightedHues(entry).map(({h,w})=>({h,w:w*gw}));
@@ -498,224 +554,165 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
     const ctx=cv.getContext("2d");
     let R=0,G=0,B=0,n=0;
     for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++){
-      const bx=Math.round(cssX*dpr)+dx,by=Math.round(cssY*dpr)+dy;
-      if(bx>=0&&bx<cv.width&&by>=0&&by<cv.height){
-        const d=ctx.getImageData(bx,by,1,1).data;R+=d[0];G+=d[1];B+=d[2];n++;
-      }
+      const imageData=ctx.getImageData(Math.round(cssX*dpr+dx),Math.round(cssY*dpr+dy),1,1);
+      const[r,g,b,a]=imageData.data;
+      if(a>0){R+=r;G+=g;B+=b;n++;}
     }
-    if(!n)return;
-    const hex="#"+[Math.round(R/n),Math.round(G/n),Math.round(B/n)].map(v=>v.toString(16).padStart(2,"0")).join("");
-    setLocal(hex);setZoom({visible:true,x:cssX,y:cssY,color:hex});
+    if(n>0){const hex="#"+[Math.round(R/n),Math.round(G/n),Math.round(B/n)].map(x=>x.toString(16).padStart(2,"0")).join("");setLocal(hex);setZoom({visible:true,x:cssX,y:cssY,color:hex});}
   },[]);
 
-  const onTS=useCallback(e=>{e.preventDefault();isDragging.current=true;const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);},[pick,toCss]);
-  const onTM=useCallback(e=>{if(!isDragging.current)return;e.preventDefault();const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);},[pick,toCss]);
-  const onTE=useCallback(e=>{e.preventDefault();isDragging.current=false;setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);},[]);
-  const onCK=useCallback(e=>{const{x,y}=toCss(e.clientX,e.clientY);pick(x,y);setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);},[pick,toCss]);
-  const handleFile=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setImgSrc(ev.target.result);setMode("image");};r.readAsDataURL(f);};
+  const handleCanvasMove=useCallback(e=>{
+    if(isDragging.current||mode!=="picker")return;
+    const{x,y}=toCss(e.clientX,e.clientY);
+    pick(x,y);
+  },[mode,toCss,pick]);
 
-  const ZoomOverlay=zoom.visible&&(()=>{
-    const{w,h}=canvasSize.current;
-    const bubbleW=60,bubbleH=60;
-    const showAbove=zoom.y>h*0.45;
-    const bubbleTop=showAbove?Math.max(2,zoom.y-82):Math.min(h-bubbleH-2,zoom.y+24);
-    const bubbleLeft=Math.max(2,Math.min(zoom.x-bubbleW/2,w-bubbleW-2));
-    return(
-      <>
-        <div style={{position:"absolute",left:zoom.x-13,top:zoom.y-13,width:26,height:26,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.95)",boxShadow:"0 0 0 1.5px rgba(0,0,0,0.7)",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",left:zoom.x-2,top:zoom.y-2,width:4,height:4,borderRadius:"50%",background:"rgba(255,255,255,0.9)",boxShadow:"0 0 0 1px rgba(0,0,0,0.6)",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",left:bubbleLeft,top:bubbleTop,width:bubbleW,height:bubbleH,borderRadius:"50%",background:zoom.color,border:"3px solid rgba(255,255,255,0.95)",boxShadow:"0 4px 20px rgba(0,0,0,0.45)",pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
-          <div style={{width:7,height:7,borderRadius:"50%",background:contrastColor(zoom.color),opacity:0.65}}/>
-          <div style={{fontSize:6,fontFamily:"monospace",color:contrastColor(zoom.color),opacity:0.8}}>{zoom.color.toUpperCase()}</div>
+  const handleCanvasDown=useCallback(e=>{isDragging.current=true;},[]);
+  const handleCanvasUp=useCallback(e=>{isDragging.current=false;},[]);
+  const handleTouchMove=useCallback(e=>{if(mode!=="picker")return;const touch=e.touches?.[0];if(!touch)return;const{x,y}=toCss(touch.clientX,touch.clientY);pick(x,y);},[mode,toCss,pick]);
+
+  useEffect(()=>{const cv=canvasRef.current;if(!cv)return;cv.addEventListener("mousemove",handleCanvasMove);cv.addEventListener("mousedown",handleCanvasDown);cv.addEventListener("mouseup",handleCanvasUp);cv.addEventListener("touchmove",handleTouchMove);return()=>{cv.removeEventListener("mousemove",handleCanvasMove);cv.removeEventListener("mousedown",handleCanvasDown);cv.removeEventListener("mouseup",handleCanvasUp);cv.removeEventListener("touchmove",handleTouchMove);};},[handleCanvasMove,handleCanvasDown,handleCanvasUp,handleTouchMove]);
+
+  return(
+    <div style={{position:"fixed",inset:0,background:T.modalOvl,display:"flex",alignItems:"flex-end",zIndex:1000}}>
+      <div style={{position:"relative",width:"100%",borderRadius:"28px 28px 0 0",background:T.modal,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,paddingTop:"1.5rem",paddingBottom:"1.5rem",paddingLeft:"1rem",paddingRight:"1rem",maxHeight:"90%",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+        <button onClick={onClose} style={{position:"absolute",top:16,right:16,width:32,height:32,borderRadius:"50%",border:T.inputB,background:T.input,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10}}><X size={16} color={T.text}/></button>
+        <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:"1.5rem"}}>Colore</div>
+        <div style={{display:"flex",gap:10,marginBottom:"1.5rem"}}>
+          {["picker","saved"].map(m=>(
+            <button key={m} onClick={()=>setMode(m)} style={{flex:1,padding:"8px",borderRadius:12,border:m===mode?T.cardB:T.inputB,background:m===mode?T.card:T.input,color:T.text,fontSize:13,fontWeight:m===mode?700:500,cursor:"pointer"}}>
+              {m==="picker"?"Picker":"Salvati"}
+            </button>
+          ))}
         </div>
-      </>
-    );
-  })();
-
-  const sheet=(
-    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:T.modalOvl,backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"88vh",display:"flex",flexDirection:"column",background:T.modal,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:"28px 28px 0 0",border:T.dark?"1px solid rgba(255,255,255,0.1)":"1px solid rgba(255,255,255,0.8)",boxShadow:"0 -8px 48px rgba(0,0,0,0.28)"}}>
-        <div style={{display:"flex",justifyContent:"center",padding:"10px 0 2px",flexShrink:0}}><div style={{width:36,height:4,borderRadius:2,background:T.text3}}/></div>
-        <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 1.25rem"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.75rem 0 1rem"}}>
-            <span style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",color:T.text}}>Seleziona colore</span>
-            <button onClick={onClose} style={{border:"none",background:T.input,borderRadius:"50%",width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><X size={15} color={T.text2}/></button>
-          </div>
-          <div style={{display:"flex",gap:5,marginBottom:"1rem",background:T.input,borderRadius:14,padding:4}}>
-            {[{id:"picker",label:"🎨 Picker"},{id:"image",label:"📷 Da foto"}].map(m=>(
-              <button key={m.id} onClick={()=>setMode(m.id)} style={{flex:1,padding:"9px",borderRadius:10,cursor:"pointer",border:mode===m.id?T.cardB:"1px solid transparent",background:mode===m.id?T.card:"transparent",fontWeight:mode===m.id?700:500,fontSize:13,color:mode===m.id?T.text:T.text2,transition:"all 0.18s"}}>{m.label}</button>
+        {mode==="picker"&&(
+          <>
+            {imgSrc?(
+              <div ref={containerRef} style={{position:"relative",width:"100%",marginBottom:"1rem"}}>
+                <canvas ref={canvasRef}/>
+                {zoom.visible&&<div style={{position:"absolute",left:zoom.x-20,top:Math.max(0,zoom.y-45),width:40,height:40,borderRadius:"50%",border:"3px solid #fff",pointerEvents:"none",boxShadow:"0 0 10px rgba(0,0,0,0.5)"}}/>}
+                {zoom.visible&&<div style={{position:"absolute",left:zoom.x-30,top:Math.max(0,zoom.y+50),width:60,height:60,borderRadius:"12px",background:zoom.color,border:"2px solid #fff",boxShadow:"0 2px 8px rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:contrastColor(zoom.color),fontFamily:"monospace",zIndex:100}}>{zoom.color.toUpperCase()}</div>}
+              </div>
+            ):(
+              <div style={{width:"100%",aspectRatio:"4/3",borderRadius:16,background:T.input,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginBottom:"1rem"}} onClick={()=>fileRef.current?.click()}>
+                <div style={{textAlign:"center",color:T.text2}}>
+                  <div style={{fontSize:32,marginBottom:8}}>📸</div>
+                  <div style={{fontSize:13,fontWeight:600}}>Tocca per caricare</div>
+                </div>
+              </div>
+            )}
+            <input type="file" ref={fileRef} accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=ev=>setImgSrc(ev.target?.result);r.readAsDataURL(f);}}} style={{display:"none"}}/>
+            <div style={{display:"flex",gap:8,marginBottom:"1rem"}}>
+              <input ref={inputRef} type="text" value={local} onChange={e=>setLocal(e.target.value.toUpperCase())} placeholder="#000000" style={{flex:1,padding:"8px 12px",borderRadius:10,border:T.inputB,background:T.input,color:T.text,fontSize:13,fontFamily:"monospace"}}/>
+              <button onClick={()=>{onChange(local);onClose();}} style={{padding:"8px 16px",borderRadius:10,background:"#007AFF",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:700}}>Salva</button>
+            </div>
+            {savedColors.length>0&&(
+              <>
+                <div style={{fontSize:11,fontWeight:700,color:T.text2,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Recenti</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:"1rem"}}>
+                  {savedColors.map((hex,i)=>(
+                    <button key={i} onClick={()=>{setLocal(hex);}} style={{width:40,height:40,borderRadius:"50%",background:hex,border:local===hex?"2px solid #fff":"1px solid rgba(255,255,255,0.3)",cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,0.2)"}}/>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+        {mode==="saved"&&(
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {savedColors.map((hex,i)=>(
+              <button key={i} onClick={()=>{setLocal(hex);onChange(hex);onClose();}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer"}}>
+                <div style={{width:50,height:50,borderRadius:12,background:hex,border:"1.5px solid rgba(255,255,255,0.3)",boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}}/>
+                <span style={{fontSize:10,fontFamily:"monospace",color:T.text2}}>{hex}</span>
+              </button>
             ))}
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:"1.25rem",padding:"0.875rem",background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,border:T.cardB,boxShadow:T.cardS}}>
-            <div style={{width:52,height:52,borderRadius:14,background:local,border:"2px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
-            <div><div style={{fontSize:15,fontWeight:700,color:T.text}}>{colorName(local)}</div><div style={{fontSize:12,fontFamily:"monospace",color:T.text2,marginTop:2}}>{local.toUpperCase()}</div></div>
-          </div>
-          {mode==="picker"&&(
-            <div>
-              <div onClick={()=>inputRef.current.click()} style={{width:"100%",height:56,borderRadius:16,background:local,border:"2px solid rgba(255,255,255,0.3)",cursor:"pointer",position:"relative",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:"0.875rem"}}>
-                <span style={{fontSize:13,fontWeight:600,color:contrastColor(local),pointerEvents:"none"}}>Tocca per aprire il color picker</span>
-                <input ref={inputRef} type="color" value={local} onChange={e=>setLocal(e.target.value)} style={{position:"absolute",opacity:0,inset:0,width:"100%",height:"100%",cursor:"pointer"}}/>
-              </div>
-              <button onClick={()=>fileRef.current.click()} style={{width:"100%",padding:"13px",border:"1.5px dashed "+T.text3,borderRadius:14,background:T.input,cursor:"pointer",fontSize:13,fontWeight:600,color:T.text2}}>📷 Campiona da foto</button>
-              <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
-            </div>
-          )}
-          {mode==="image"&&(
-            <div>
-              {!imgSrc?(
-                <button onClick={()=>fileRef.current.click()} style={{width:"100%",padding:"32px 16px",border:"2px dashed "+T.text3,borderRadius:18,background:T.input,cursor:"pointer",textAlign:"center"}}>
-                  <div style={{fontSize:32,marginBottom:8}}>📷</div>
-                  <div style={{fontSize:14,fontWeight:600,color:T.text2}}>Carica una foto</div>
-                  <div style={{fontSize:12,color:T.text3,marginTop:4}}>Fotocamera o libreria immagini</div>
-                </button>
-              ):(
-                <div>
-                  <div style={{fontSize:12,color:T.text2,marginBottom:8,textAlign:"center"}}>👆 Tocca e trascina per campionare</div>
-                  <div ref={containerRef} style={{width:"100%",position:"relative",borderRadius:14,overflow:"hidden",border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(0,0,0,0.1)",touchAction:"none",background:"#000"}}>
-                    <canvas ref={canvasRef} style={{display:"block",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}/>
-                    {ZoomOverlay}
-                  </div>
-                  <button onClick={()=>{setImgSrc(null);if(fileRef.current)fileRef.current.value="";}} style={{marginTop:8,width:"100%",padding:"9px",border:T.inputB,borderRadius:10,background:T.input,cursor:"pointer",fontSize:12,color:T.text2}}>Cambia foto</button>
-                </div>
-              )}
-              <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
-            </div>
-          )}
-          {savedColors.length>0&&(
-            <div style={{marginTop:"1.25rem"}}>
-              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",color:T.text3,textTransform:"uppercase",marginBottom:10}}>Salvati</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {savedColors.map((c,i)=><div key={i} onClick={()=>setLocal(c)} style={{width:40,height:40,borderRadius:10,background:c,border:c===local?"2.5px solid rgba(255,255,255,0.9)":"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer"}}/>)}
-              </div>
-            </div>
-          )}
-          <div style={{height:"1.25rem"}}/>
-        </div>
-        <div style={{flexShrink:0,padding:"0.875rem 1.25rem",paddingBottom:"calc(0.875rem + env(safe-area-inset-bottom,0px))",borderTop:"1px solid "+T.sep,background:T.dark?"rgba(0,0,0,0.4)":"rgba(255,255,255,0.4)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",display:"flex",gap:10}}>
-          <button onClick={()=>onSave(local)} style={{flex:1,padding:"14px",border:T.cardB,borderRadius:14,background:T.card,cursor:"pointer",fontSize:14,fontWeight:600,color:T.text2,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><Save size={15}/> Salva</button>
-          <button onClick={()=>{onChange(local);onClose();}} style={{flex:2,padding:"14px",border:"none",borderRadius:14,background:T.dark?"rgba(255,255,255,0.9)":"rgba(0,0,0,0.82)",cursor:"pointer",fontSize:14,fontWeight:700,color:T.dark?"rgba(0,0,0,0.88)":"rgba(255,255,255,0.95)",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><Check size={15}/> Applica</button>
-        </div>
-      </div>
-    </div>
-  );
-  return ReactDOM.createPortal(sheet,document.body);
-}
-
-// ─── GarmentColorEditor ───────────────────────────────────────────────────────
-function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
-  const[pickerTarget,setPickerTarget]=useState(null);
-  const e=normalizeEntry(entry);
-  const primaryPct=100-(e.secondaries||[]).reduce((a,s)=>a+s.pct,0);
-  const addSecondary=()=>{
-    if((e.secondaries||[]).length>=2)return;
-    onUpdate({...e,secondaries:[...(e.secondaries||[]),{hex:["#8B7355","#4A6080"][(e.secondaries||[]).length],pct:20}]});
-  };
-  const removeSecondary=i=>{const s=[...(e.secondaries||[])];s.splice(i,1);onUpdate({...e,secondaries:s});};
-  const updateSecondaryHex=(i,hex)=>{const s=[...(e.secondaries||[])];s[i]={...s[i],hex};onUpdate({...e,secondaries:s});};
-  const updateSecondaryPct=(i,pct)=>{
-    const s=[...(e.secondaries||[])];
-    const maxPct=90-(e.secondaries||[]).filter((_,j)=>j!==i).reduce((a,x)=>a+x.pct,0);
-    s[i]={...s[i],pct:Math.max(5,Math.min(maxPct,pct))};
-    onUpdate({...e,secondaries:s});
-  };
-  const isJeans=e.material==="jeans";
-  return(
-    <div>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-        <div style={{width:38,height:38,borderRadius:10,background:e.hex,border:"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",flexShrink:0}} onClick={()=>setPickerTarget("primary")}/>
-        <div style={{flex:1}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{colorName(e.hex)}</div>
-          <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{e.hex.toUpperCase()} · {Math.round(primaryPct)}%</div>
-        </div>
-        {(e.secondaries||[]).length<2&&!isJeans&&(
-          <button onClick={addSecondary} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:999,border:"1.5px solid "+T.sep,background:T.input,cursor:"pointer",fontSize:11,color:T.text2}}>
-            <Plus size={10}/> Colore
-          </button>
         )}
       </div>
-      {!isJeans&&(e.secondaries||[]).map((s,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingLeft:12,borderLeft:"2px solid "+T.sep}}>
-          <div style={{width:30,height:30,borderRadius:8,background:s.hex,border:"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",flexShrink:0}} onClick={()=>setPickerTarget(i)}/>
-          <div style={{flex:1}}><div style={{fontSize:11,color:T.text2}}>{colorName(s.hex)}</div></div>
-          <div style={{display:"flex",alignItems:"center",gap:4}}>
-            <button onClick={()=>updateSecondaryPct(i,s.pct-5)} style={{width:22,height:22,borderRadius:6,border:T.inputB,background:T.input,cursor:"pointer",color:T.text2,display:"flex",alignItems:"center",justifyContent:"center"}}><Minus size={9}/></button>
-            <span style={{fontSize:11,fontWeight:700,color:T.text,minWidth:28,textAlign:"center"}}>{s.pct}%</span>
-            <button onClick={()=>updateSecondaryPct(i,s.pct+5)} style={{width:22,height:22,borderRadius:6,border:T.inputB,background:T.input,cursor:"pointer",color:T.text2,display:"flex",alignItems:"center",justifyContent:"center"}}><Plus size={9}/></button>
-          </div>
-          <button onClick={()=>removeSecondary(i)} style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",cursor:"pointer",color:T.text3,display:"flex",alignItems:"center",justifyContent:"center"}}><Trash2 size={12}/></button>
-        </div>
-      ))}
-      {/* Jeans toggle — replaces pattern/secondary when active */}
-      <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
-        <button
-          onClick={()=>onUpdate({...e,material:isJeans?"normal":"jeans",secondaries:isJeans?e.secondaries:[],pattern:isJeans?e.pattern:"solid"})}
-          style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:999,
-            border:isJeans?"1.5px solid "+T.text:"1.5px solid "+T.sep,
-            background:isJeans?T.card:T.input,cursor:"pointer",fontSize:11,
-            fontWeight:isJeans?700:500,color:isJeans?T.text:T.text2,transition:"all 0.15s"}}>
-          {isJeans&&<Check size={9} color={T.text}/>}
-          👖 Denim / Jeans
-        </button>
-        {isJeans&&<span style={{fontSize:10,color:T.text3,fontStyle:"italic"}}>Colore libero — compatibilità allargata</span>}
-      </div>
-      {!isJeans&&(
-        <div style={{marginTop:10}}>
-          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>Fantasia</div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {PATTERN_OPTIONS.map(p=>{
-              const active=(e.pattern||"solid")===p.id;
-              return<button key={p.id} onClick={()=>onUpdate({...e,pattern:p.id})} style={{padding:"4px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{p.label}</button>;
-            })}
-          </div>
-        </div>
-      )}
-      {pickerTarget==="primary"&&<ColorPickerModal value={e.hex} onClose={()=>setPickerTarget(null)} onChange={hex=>onUpdate({...e,hex})} savedColors={savedGarment} onSave={onSaveGarment}/>}
-      {typeof pickerTarget==="number"&&<ColorPickerModal value={(e.secondaries||[])[pickerTarget]?.hex||"#888888"} onClose={()=>setPickerTarget(null)} onChange={hex=>updateSecondaryHex(pickerTarget,hex)} savedColors={savedGarment} onSave={onSaveGarment}/>}
     </div>
   );
 }
 
-// ─── ProfileTab ───────────────────────────────────────────────────────────────
+// ─── ProfileTab ────────────────────────────────────────────────────────────────
 function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHairColor,season,savedColors,onSave,reflexes,setReflexes}){
   const T=useT();
-  const[picker,setPicker]=useState(null);
-  const slots=[
-    {key:"skin",label:"Incarnato",val:skinColor,set:setSkinColor,saved:savedColors.skin,reflexOptions:UNDERTONE_OPTIONS,reflexKey:"skin",reflexLabel:"Sottotono"},
-    {key:"eye", label:"Occhi",    val:eyeColor, set:setEyeColor, saved:savedColors.eye, reflexOptions:EYE_REFLEXES,      reflexKey:"eye", reflexLabel:"Riflessi"},
-    {key:"hair",label:"Capelli",  val:hairColor,set:setHairColor,saved:savedColors.hair,reflexOptions:HAIR_REFLEXES,     reflexKey:"hair",reflexLabel:"Riflessi"},
-  ];
-  const swatches=(()=>{
-    const p=analyzeProfile(skinColor,eyeColor,hairColor,reflexes);
-    return buildHarmonyPool("analog",(SEASON_ANCHORS[season.base]||SEASON_ANCHORS.autumn)[0],p,0).slice(0,6);
-  })();
+  const[showPicker,setShowPicker]=useState(null);
   return(
     <div style={{padding:"1rem"}}>
-      <div style={{borderRadius:24,marginBottom:"1rem",overflow:"hidden",boxShadow:"0 8px 40px rgba(0,0,0,0.28)"}}>
-        <div style={{background:"linear-gradient(145deg,"+season.grad[0]+","+season.grad[1]+")",padding:"1.5rem 1.25rem 1.25rem",position:"relative"}}>
-          <div style={{position:"absolute",top:0,left:0,right:0,height:"50%",background:"linear-gradient(180deg,rgba(255,255,255,0.18) 0%,transparent 100%)",pointerEvents:"none"}}/>
-          <div style={{fontSize:28,marginBottom:6}}>{season.emoji}</div>
-          <div style={{fontSize:20,fontWeight:800,color:season.text,fontFamily:"Georgia,serif",letterSpacing:"-0.02em",lineHeight:1.1,marginBottom:2}}>{season.name}</div>
-          <div style={{fontSize:11,color:season.text,opacity:0.6,marginBottom:4,fontStyle:"italic"}}>{season.nameEn}</div>
-          <div style={{fontSize:12,color:season.text,opacity:0.75,marginBottom:"1rem"}}>{season.desc}</div>
-          <div style={{display:"flex",gap:5}}>{swatches.map((c,i)=><div key={i} style={{flex:1,height:20,borderRadius:6,background:c}}/>)}</div>
+      <div style={{marginBottom:"2rem"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"0.5rem"}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3}}>Profilo</div>
+        </div>
+        <div style={{display:"flex",gap:12,marginBottom:"1rem"}}>
+          {[{label:"Pelle",color:skinColor,set:setSkinColor},{label:"Occhi",color:eyeColor,set:setEyeColor},{label:"Capelli",color:hairColor,set:setHairColor}].map(({label,color,set})=>(
+            <div key={label} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+              <ColorDot hex={color} size={52} onClick={()=>setShowPicker({key:label.toLowerCase(),color,set})}/>
+              <span style={{fontSize:10,color:T.text2}}>{label}</span>
+            </div>
+          ))}
         </div>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:"1rem"}}>
-        {slots.map(({key,label,val,set,saved,reflexOptions,reflexKey,reflexLabel})=>(
-          <div key={key} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:18,padding:"0.875rem 1rem",border:T.cardB,boxShadow:T.cardS}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setPicker({key,val,set,saved})}>
-              <div style={{width:46,height:46,borderRadius:"50%",background:val,border:"2.5px solid rgba(255,255,255,0.5)",flexShrink:0}}/>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{label}</div><div style={{fontSize:10,fontFamily:"monospace",color:T.text3,marginTop:1}}>{val.toUpperCase()}</div></div>
-              <ChevronRight size={16} color={T.text3}/>
-            </div>
-            <ReflexPicker label={reflexLabel} options={reflexOptions} value={reflexes[reflexKey]||null} onChange={v=>setReflexes(p=>({...p,[reflexKey]:v}))} T={T}/>
+      <ReflexPicker label="Sottotono Pelle" options={UNDERTONE_OPTIONS} value={reflexes.skin} onChange={v=>setReflexes(p=>({...p,skin:v}))} T={T}/>
+      <ReflexPicker label="Riflessi Occhi" options={EYE_REFLEXES} value={reflexes.eye} onChange={v=>setReflexes(p=>({...p,eye:v}))} T={T}/>
+      <ReflexPicker label="Riflessi Capelli" options={HAIR_REFLEXES} value={reflexes.hair} onChange={v=>setReflexes(p=>({...p,hair:v}))} T={T}/>
+      <div style={{marginTop:"2rem",padding:"1rem",borderRadius:16,background:T.card,border:T.cardB,boxShadow:T.cardS}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:"0.5rem"}}>
+          <span style={{fontSize:20}}>{season.emoji}</span>
+          <div>
+            <div style={{fontSize:16,fontWeight:700,color:T.text}}>{season.name}</div>
+            <div style={{fontSize:11,color:T.text2}}>{season.desc}</div>
           </div>
-        ))}
+        </div>
+        <div style={{marginTop:"0.75rem",fontSize:10,color:T.text3,lineHeight:1.6}}>Undertone: <span style={{fontWeight:700,color:T.text}}>{season.undertone==="warm"?"Caldo":"Freddo"}</span> · Profondità: <span style={{fontWeight:700,color:T.text}}>{season.depth==="deep"?"Scura":"Chiara"}</span> · Intensità: <span style={{fontWeight:700,color:T.text}}>{season.intensity==="high"?"Alta":"Bassa"}</span></div>
       </div>
-      <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:14,padding:"0.875rem",fontSize:12,color:T.text2,lineHeight:1.6,border:T.cardB}}>
-        <strong style={{color:T.text}}>Suggerimento:</strong> Sottotono e riflessi sono opzionali ma migliorano la precisione. Tocca per deselezionare.
+      {showPicker&&(
+        <ColorPickerModal value={showPicker.color} onClose={()=>setShowPicker(null)} onChange={hex=>{showPicker.set(hex);onSave(showPicker.key.split(" ")[0].toLowerCase(),hex);}} savedColors={savedColors[showPicker.key.split(" ")[0].toLowerCase()]||[]} onSave={(key,color)=>onSave(key,color)}/>
+      )}
+    </div>
+  );
+}
+
+// ─── OutfitCard ────────────────────────────────────────────────────────────────
+function OutfitCard({combo,index,season}){
+  const T=useT();
+  const[expanded,setExpanded]=useState(false);
+  const fits=combo.items.map(item=>colorSeasonFit(item.hex,season,combo.items.filter(i=>i.id!==item.id).map(i=>i.hex),item.material));
+  const statusColor=fits.some(f=>f==="clash")?"#B02828":fits.some(f=>f==="caution")?"#B8780A":"#34C759";
+  const statusLabel=fits.some(f=>f==="clash")?"Conflitto":fits.some(f=>f==="caution")?"Attenzione":"Perfetto";
+  return(
+    <div style={{borderRadius:16,border:T.cardB,background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,overflow:"hidden",boxShadow:T.cardS}}>
+      <div onClick={()=>setExpanded(!expanded)} style={{display:"flex",alignItems:"center",gap:12,padding:"1rem",cursor:"pointer"}}>
+        <div style={{display:"flex",gap:8}}>
+          {combo.items.slice(0,4).map((item,i)=>(
+            <div key={i} style={{width:28,height:28,borderRadius:8,background:item.hex,border:"1px solid rgba(255,255,255,0.2)"}}/>
+          ))}
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>
+            {combo.items.find(i=>i.id==="giubbotto")?combo.items.find(i=>i.id==="giubbotto").name:combo.items[0]?.name}
+          </div>
+          <div style={{fontSize:10,color:T.text2}}>{combo.type}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{width:20,height:20,borderRadius:"50%",background:statusColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#fff"}}/>
+          <ChevronRight size={16} color={T.text2} style={{transform:expanded?"rotate(90deg)":"rotate(0)",transition:"transform 0.2s"}}/>
+        </div>
       </div>
-      {picker&&<ColorPickerModal value={picker.val} onClose={()=>setPicker(null)} onChange={c=>picker.set(c)} savedColors={picker.saved} onSave={c=>onSave(picker.key,c)}/>}
+      {expanded&&(
+        <div style={{padding:"0 1rem 1rem",display:"flex",flexDirection:"column",gap:8}}>
+          {combo.items.map((item,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px",borderRadius:10,background:T.input}}>
+              <div style={{width:32,height:32,borderRadius:8,background:item.hex,border:"1.5px solid rgba(255,255,255,0.3)"}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.text}}>{item.name}</div>
+                <div style={{fontSize:9,color:T.text3}}>{item.id}</div>
+              </div>
+              <span style={{fontSize:9,fontWeight:700,color:T.text2}}>{item.weight}%</span>
+              {fits[i]!=="ok"&&<FitBadge fit={fits[i]}/>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -723,171 +720,127 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
 // ─── WardrobeTab ──────────────────────────────────────────────────────────────
 function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onSaveGarment,season}){
   const T=useT();
-  const[expandedId,setExpandedId]=useState(null);
-
-  // Compute weights based on currently non-excluded garments
-  const presentIds=GARMENTS.filter(g=>(modes[g.id]||"auto")!=="excluded").map(g=>g.id);
-  const garmentWeights=computeGarmentWeights(presentIds);
-
+  const[showPicker,setShowPicker]=useState(null);
+  const[expandedGarment,setExpandedGarment]=useState(null);
+  
+  const updateGarmentColor=(gid,color)=>{setFixedColors(p=>({...p,[gid]:{...normalizeEntry(p[gid]),hex:color}}))}
+  
   return(
     <div style={{padding:"1rem"}}>
-      <p style={{fontSize:12,color:T.text2,marginBottom:"0.875rem",lineHeight:1.6}}>
-        <strong style={{color:T.text}}>Auto</strong> = suggerito · <strong style={{color:T.text}}>Fisso</strong> = colore tuo · <strong style={{color:T.text}}>Escludi</strong> = non incluso.
-      </p>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {GARMENTS.map(g=>{
-          const mode=modes[g.id]||"auto";
-          const excluded=mode==="excluded",fixed=mode==="fixed";
-          const entry=normalizeEntry(fixedColors[g.id]);
-          const isExp=expandedId===g.id;
-          const weight=garmentWeights[g.id]||0;
-          // Fit check for fixed garments — no combo context in wardrobe view
-          const fit=fixed&&!excluded?colorSeasonFit(entry.hex,season,[],entry.material):"ok";
-
-          const mBtn=(m,Icon,label)=>{
-            const active=mode===m;
-            return(
-              <button onClick={()=>setModes(p=>({...p,[g.id]:m}))} style={{padding:"6px 10px",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,transition:"all 0.15s",display:"flex",alignItems:"center",gap:4,background:active?(T.dark?"rgba(255,255,255,0.88)":"rgba(0,0,0,0.78)"):"transparent",color:active?(T.dark?"rgba(0,0,0,0.88)":"rgba(255,255,255,0.95)"):T.text2}}>
-                <Icon size={10}/>{label}
-              </button>
-            );
-          };
-
-          return(
-            <div key={g.id} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:16,border:T.cardB,boxShadow:T.cardS,overflow:"hidden",opacity:excluded?0.45:1,transition:"opacity 0.2s"}}>
-              <div style={{padding:"0.875rem 1rem",display:"flex",alignItems:"center",gap:12}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                    <div style={{fontSize:14,fontWeight:600,color:T.text,textDecoration:excluded?"line-through":"none"}}>{g.label}</div>
-                    {/* Weight chip — shows visual contribution */}
-                    {!excluded&&weight>0&&(
-                      <span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,
-                        background:T.input,color:T.text3,letterSpacing:"0.03em"}}>
-                        {weight}%
-                      </span>
-                    )}
-                    {fit!=="ok"&&<FitBadge fit={fit}/>}
-                  </div>
-                  {fixed&&!excluded&&(
-                    <div style={{fontSize:11,color:T.text2,marginTop:2}}>
-                      {entry.material==="jeans"?"👖 Denim":colorName(entry.hex)}
-                      {(entry.secondaries||[]).length>0&&" + "+(entry.secondaries||[]).length+" col."}
-                      {entry.pattern&&entry.pattern!=="solid"&&entry.material!=="jeans"&&" · "+(PATTERN_OPTIONS.find(p=>p.id===entry.pattern)?.label||"")}
-                    </div>
-                  )}
-                  {excluded&&<div style={{fontSize:11,color:T.text3,marginTop:2}}>Non incluso</div>}
+      {GARMENTS.map(g=>{
+        const mode=modes[g.id]||"auto";
+        const fixed=normalizeEntry(fixedColors[g.id]||{});
+        const fit=colorSeasonFit(fixed.hex,season,[],fixed.material);
+        const isExpanded=expandedGarment===g.id;
+        return(
+          <div key={g.id} style={{marginBottom:"1rem",borderRadius:14,border:T.cardB,background:T.card,overflow:"hidden",boxShadow:T.cardS}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"1rem"}}>
+              <select value={mode} onChange={e=>setModes(p=>({...p,[g.id]:e.target.value}))} style={{padding:"6px 8px",borderRadius:8,border:T.inputB,background:T.input,color:T.text,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                <option value="auto">Auto</option>
+                <option value="fixed">Fisso</option>
+                <option value="excluded">Escluso</option>
+              </select>
+              {mode==="fixed"&&(
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <ColorDot hex={fixed.hex} size={36} onClick={()=>setShowPicker({gid:g.id,entry:fixed})}/>
+                  <span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:T.input,color:T.text3}}>
+                    {fixed.weight||0}%
+                  </span>
+                  {fixed.fixed&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>FISSO</span>}
+                  {fixed.material==="jeans"&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>👖</span>}
+                  {fit!=="ok"&&<FitBadge fit={fit}/>}
                 </div>
-                {fixed&&!excluded&&(
-                  <div style={{display:"flex",gap:3}}>
-                    <div style={{width:28,height:28,borderRadius:7,background:entry.hex,border:"1.5px solid rgba(255,255,255,0.4)"}}/>
-                    {(entry.secondaries||[]).map((s,i)=><div key={i} style={{width:28,height:28,borderRadius:7,background:s.hex,border:"1.5px solid rgba(255,255,255,0.4)"}}/>)}
-                  </div>
-                )}
-                <div style={{display:"flex",borderRadius:12,border:T.inputB,overflow:"hidden",flexShrink:0,background:T.input}}>
-                  {mBtn("auto",Sparkles,"Auto")}
-                  {mBtn("fixed",Lock,"Fisso")}
-                  {mBtn("excluded",Minus,"Escludi")}
-                </div>
-              </div>
-              {fixed&&!excluded&&(
-                <>
-                  <button onClick={()=>setExpandedId(e=>e===g.id?null:g.id)} style={{width:"100%",padding:"8px 1rem",border:"none",borderTop:"1px solid "+T.sep,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,color:T.text2,fontSize:12}}>
-                    {isExp?"Chiudi":"Modifica colori e fantasia"}
-                    <ChevronRight size={12} style={{transform:isExp?"rotate(90deg)":"none",transition:"transform 0.2s"}}/>
-                  </button>
-                  {isExp&&(
-                    <div style={{padding:"0.75rem 1rem 1rem",borderTop:"1px solid "+T.sep}}>
-                      <GarmentColorEditor entry={entry} onUpdate={e=>setFixedColors(p=>({...p,[g.id]:e}))} savedGarment={savedGarment[g.id]||[]} onSaveGarment={c=>onSaveGarment(g.id,c)} T={T}/>
-                    </div>
-                  )}
-                </>
               )}
+              <div style={{flex:1}}/>
+              <button onClick={()=>setExpandedGarment(isExpanded?null:g.id)} style={{padding:"6px 10px",borderRadius:8,border:T.inputB,background:T.input,color:T.text,cursor:"pointer",fontSize:11,fontWeight:600}}>{isExpanded?"−":"+"}</button>
             </div>
-          );
-        })}
+            {isExpanded&&mode==="fixed"&&(
+              <div style={{padding:"0 1rem 1rem",borderTop:T.sep}}>
+                <div style={{marginBottom:"1rem"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Colore Principale</div>
+                  <button onClick={()=>setShowPicker({gid:g.id,entry:fixed})} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px",borderRadius:10,border:T.inputB,background:T.input,cursor:"pointer"}}>
+                    <ColorDot hex={fixed.hex} size={40}/>
+                    <div style={{flex:1,textAlign:"left"}}>
+                      <div style={{fontSize:11,fontWeight:600,color:T.text}}>{colorName(fixed.hex)}</div>
+                      <div style={{fontSize:9,fontFamily:"monospace",color:T.text3}}>{fixed.hex.toUpperCase()}</div>
+                    </div>
+                    <span style={{fontSize:9,color:T.text3}}>Tocca</span>
+                  </button>
+                </div>
+                {["material","pattern"].map(field=>(
+                  <div key={field} style={{marginBottom:"1rem"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.text3,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                      {field==="material"?"Materiale":"Pattern"}
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {(field==="material"?[{id:"normal",label:"Normale"},{id:"jeans",label:"Jeans"}]:[{id:"solid",label:"Tinta unita"},{id:"stripes_v",label:"Righe V"},{id:"stripes_h",label:"Righe H"},{id:"check",label:"Quadri"},{id:"dots",label:"Pois"},{id:"floral",label:"Floreale"},{id:"abstract",label:"Astratta"}]).map(opt=>(
+                        <button key={opt.id} onClick={()=>setFixedColors(p=>({...p,[g.id]:{...normalizeEntry(p[g.id]),[(field==="material"?"material":"pattern")]:opt.id}}))} style={{padding:"6px 12px",borderRadius:8,border:fixed[field]=== opt.id?T.inputB:"1px solid "+T.sep,background:fixed[field]===opt.id?T.input:"transparent",color:T.text,fontSize:11,fontWeight:fixed[field]===opt.id?700:500,cursor:"pointer"}}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div style={{marginTop:"1rem",padding:"1rem",borderRadius:14,border:T.cardB,background:T.input}}>
+        <div style={{fontSize:11,color:T.text2,lineHeight:1.6}}>
+          <span style={{fontWeight:700}}>Auto:</span> Suggerimenti armonia basati sulla stagione.<br/>
+          <span style={{fontWeight:700}}>Fisso:</span> Colore manuale, non cambia tra outfit.<br/>
+          <span style={{fontWeight:700}}>Escluso:</span> Non appare negli outfit generati.
+        </div>
       </div>
-      <div style={{marginTop:"0.875rem",padding:"0.75rem",background:T.card,borderRadius:12,border:T.cardB,fontSize:11,color:T.text3,lineHeight:1.6}}>
-        La % indica il contributo visivo del capo all'outfit. Cambia dinamicamente in base agli strati presenti.
-      </div>
+      {showPicker&&(
+        <ColorPickerModal value={showPicker.entry.hex} onClose={()=>setShowPicker(null)} onChange={hex=>updateGarmentColor(showPicker.gid,hex)} savedColors={savedGarment[showPicker.gid]||[]} onSave={(k,color)=>onSaveGarment(showPicker.gid,color)}/>
+      )}
     </div>
   );
 }
 
-// ─── OutfitCard ───────────────────────────────────────────────────────────────
-function OutfitCard({combo,index,season}){
+// ─── SummaryGarments ──────────────────────────────────────────────────────────
+function SummaryGarments({combo}){
   const T=useT();
-  const[expanded,setExpanded]=useState(false);
-  const h=HARMONIES.find(h=>h.id===combo.type);
-
-  // All hex values in combo — used for contextual neutral evaluation
-  const allHexes=combo.items.map(item=>item.hex);
-
-  // Compute fit for each item with full combo context
-  const itemsWithFit=combo.items.map(item=>({
-    ...item,
-    fit:colorSeasonFit(
-      item.hex,
-      season,
-      allHexes.filter(hx=>hx!==item.hex), // other hexes for context
-      item.material||"normal"
-    ),
-  }));
-
-  // Weighted clash score: sum weight of clashing items
-  const clashWeight=itemsWithFit
-    .filter(item=>item.fit==="clash")
-    .reduce((a,item)=>a+(item.weight||5),0);
-  const cautionWeight=itemsWithFit
-    .filter(item=>item.fit==="caution")
-    .reduce((a,item)=>a+(item.weight||5),0);
-  const hasIssues=clashWeight>0||cautionWeight>=20;
-
   return(
-    <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:20,border:T.cardB,boxShadow:T.cardS,overflow:"hidden"}}>
-      <div style={{padding:"1rem 1.125rem",cursor:"pointer"}} onClick={()=>setExpanded(e=>!e)}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-          <span style={{fontSize:10,fontFamily:"monospace",color:T.text3,fontWeight:700}}>{String(index+1).padStart(2,"0")}</span>
-          <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"Georgia,serif",flex:1}}>{h?.name}</span>
-          {hasIssues&&(
-            <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:6,
-              background:clashWeight>0?"rgba(180,40,40,0.12)":"rgba(180,120,10,0.12)",
-              border:clashWeight>0?"1px solid rgba(180,40,40,0.3)":"1px solid rgba(180,120,10,0.3)"}}>
-              <AlertTriangle size={9} color={clashWeight>0?"#B02828":"#A07010"}/>
-              <span style={{fontSize:9,fontWeight:700,color:clashWeight>0?"#B02828":"#A07010"}}>
-                {clashWeight>0?`${clashWeight}% clash`:`${cautionWeight}% attenzione`}
-              </span>
-            </div>
-          )}
-          <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",padding:"3px 7px",borderRadius:6,background:T.input,color:T.text2}}>{h?.tag}</div>
-          <ChevronRight size={14} color={T.text3} style={{transform:expanded?"rotate(90deg)":"none",transition:"transform 0.2s"}}/>
-        </div>
-        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          {combo.items.map((item,i)=><ColorDot key={i} hex={item.hex} size={30} fixed={item.fixed}/>)}
-        </div>
-      </div>
-      {expanded&&(
-        <div style={{borderTop:"1px solid "+T.sep,padding:"0.875rem 1.125rem",background:T.dark?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.3)"}}>
-          {itemsWithFit.map((item,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:10,marginBottom:10,borderBottom:i<itemsWithFit.length-1?"1px solid "+T.sep:"none"}}>
-              <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                  <span style={{fontSize:12,fontWeight:600,color:T.text}}>
-                    {GARMENTS.find(g=>g.id===item.id)?.short||item.id}
-                  </span>
-                  {/* Weight chip */}
-                  <span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:T.input,color:T.text3}}>
-                    {item.weight||0}%
-                  </span>
-                  {item.fixed&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>FISSO</span>}
-                  {item.material==="jeans"&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>👖</span>}
-                  {item.fit!=="ok"&&<FitBadge fit={item.fit}/>}
+    <div>
+      {combo.items.filter(i=>i.fixed).length>0&&(
+        <div style={{marginBottom:"1.5rem"}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:8}}>Fissi</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {combo.items.filter(i=>i.fixed).map(item=>(
+              <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px",borderRadius:10,background:T.input}}>
+                <div style={{width:28,height:28,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.2)"}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.text}}>{item.name}</div>
+                  <div style={{fontSize:9,color:T.text3}}>{item.id}</div>
                 </div>
-                <div style={{fontSize:11,color:T.text2}}>{item.name}</div>
+                <span style={{fontSize:9,fontWeight:700,color:T.text2}}>
+                  {item.weight||0}%
+                </span>
               </div>
-              <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{item.hex.toUpperCase()}</div>
-            </div>
-          ))}
+            ))}
+          </div>
+        </div>
+      )}
+      {combo.items.filter(i=>!i.fixed).length>0&&(
+        <div>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:8}}>Suggeriti</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {combo.items.filter(i=>!i.fixed).map((item,idx)=>(
+              <div key={idx} style={{display:"flex",alignItems:"center",gap:10,padding:"8px",borderRadius:10,background:T.input}}>
+                <div style={{width:28,height:28,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.2)"}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.text}}>{item.name}</div>
+                  <div style={{fontSize:9,color:T.text3}}>{item.id}</div>
+                </div>
+                <span style={{fontSize:9,fontWeight:700,color:T.text2,padding:"1px 5px",borderRadius:4,background:T.input,color:T.text3}}>
+                  {item.weight||0}%
+                </span>
+              </div>
+            ))}
+          </div>
           <div style={{fontSize:10,color:T.text3,textAlign:"right",marginTop:2}}>
             % = contributo visivo stimato
           </div>
