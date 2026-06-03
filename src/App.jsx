@@ -27,40 +27,142 @@ function contrastColor(hex){
   return(0.299*r+0.587*g+0.114*b)>145?"rgba(0,0,0,0.85)":"rgba(255,255,255,0.95)";
 }
 
-// ─── Season fit check ─────────────────────────────────────────────────────────
-// Returns "ok" | "caution" | "clash"
-function colorSeasonFit(hex,profile){
-  if(!profile)return"ok";
-  const[h,s,l]=hexToHsl(hex);
-  const lMin=profile.depth==="deep"?15:30;
-  const lMax=profile.depth==="deep"?65:85;
-  let p=0;
-  // Lightness vs depth
-  if(l<lMin-15||l>lMax+15)p+=2;
-  else if(l<lMin-6||l>lMax+6)p+=1;
-  // Chromatic checks
-  if(s>15){
-    // Saturation vs intensity
-    if(profile.intensity==="low"&&s>65)p+=2;
-    else if(profile.intensity==="low"&&s>45)p+=1;
-    // Hue vs undertone (rough)
-    const isWarmHue=h<60||h>300;
-    const isCoolHue=h>170&&h<290;
-    if(profile.undertone==="warm"&&isCoolHue&&s>35)p+=1;
-    if(profile.undertone==="cool"&&isWarmHue&&s>35)p+=1;
+// ─── Garment weights ──────────────────────────────────────────────────────────
+const GARMENT_BASE_WEIGHTS={
+  giubbotto:32, pantalone:30, felpa:28, maglia:25, scarpe:12, cintura:5, calzini:4,
+};
+function computeGarmentWeights(presentIds){
+  const w={};
+  for(const id of presentIds)w[id]=GARMENT_BASE_WEIGHTS[id]||8;
+  // Layer dynamics: outer layers make inner layers less visible
+  if(presentIds.includes("giubbotto")){
+    if(w.felpa !==undefined)w.felpa *=0.35;
+    if(w.maglia!==undefined)w.maglia*=0.12;
+  } else if(presentIds.includes("felpa")){
+    if(w.maglia!==undefined)w.maglia*=0.30;
   }
-  if(p===0)return"ok";
-  if(p<=1)return"caution";
+  const total=Object.values(w).reduce((a,b)=>a+b,0);
+  const result={};
+  for(const[id,val]of Object.entries(w))result[id]=total>0?Math.round(val/total*100):0;
+  return result;
+}
+
+// ─── Season fit ranges (saturation and lightness per sub-season) ──────────────
+const SEASON_SAT_RANGES={
+  "spring-bright": {min:55,max:90},
+  "spring-light":  {min:30,max:68},
+  "spring-warm":   {min:38,max:75},
+  "spring-true":   {min:38,max:75},
+  "summer-soft":   {min:12,max:42},
+  "summer-light":  {min:20,max:55},
+  "summer-cool":   {min:22,max:58},
+  "summer-true":   {min:22,max:55},
+  "autumn-deep":   {min:28,max:72},
+  "autumn-warm":   {min:32,max:70},
+  "autumn-soft":   {min:18,max:48},
+  "autumn-true":   {min:28,max:65},
+  "winter-bright": {min:62,max:95},
+  "winter-cool":   {min:42,max:82},
+  "winter-deep":   {min:38,max:80},
+  "winter-true":   {min:48,max:85},
+};
+const SEASON_LIGHT_RANGES={
+  "spring-bright": {min:35,max:85},
+  "spring-light":  {min:42,max:90},
+  "spring-warm":   {min:38,max:82},
+  "spring-true":   {min:38,max:82},
+  "summer-soft":   {min:38,max:84},
+  "summer-light":  {min:42,max:88},
+  "summer-cool":   {min:32,max:80},
+  "summer-true":   {min:35,max:82},
+  "autumn-deep":   {min:12,max:58},
+  "autumn-warm":   {min:22,max:68},
+  "autumn-soft":   {min:28,max:72},
+  "autumn-true":   {min:22,max:68},
+  "winter-bright": {min:22,max:88},
+  "winter-cool":   {min:18,max:78},
+  "winter-deep":   {min:8, max:55},
+  "winter-true":   {min:18,max:78},
+};
+
+// ─── Color fit evaluation ─────────────────────────────────────────────────────
+// Neutrals: near-black (l<15, s<15), near-white (l>88, s<12), mid-grey (s<10)
+// Fit depends on what surrounds them, not on the season.
+function evaluateNeutralFit(l,isNearBlack,isNearWhite,comboHexes){
+  if(isNearBlack){
+    // Near-black + chromatic dark (navy, dark burgundy...) → depth clash
+    const darkChromatic=comboHexes.filter(c=>{const[,cs,cl]=hexToHsl(c);return cl<35&&cs>30;});
+    if(darkChromatic.length>0)return"caution";
+    // Near-black + another near-black at very similar lightness → monotone risk
+    // (monochromatic graded darks are fine — only identical pitch-black pairs are dull)
+    return"ok";
+  }
+  if(isNearWhite){
+    const veryHighSat=comboHexes.filter(c=>hexToHsl(c)[1]>78);
+    if(veryHighSat.length>0)return"caution";
+    const highSat=comboHexes.filter(c=>hexToHsl(c)[1]>60);
+    if(highSat.length>=2)return"caution";
+    return"ok";
+  }
+  // Mid-grey: universally neutral, always ok
+  return"ok";
+}
+
+// Chromatic colors: gradient penalty on sat, lightness, hue/undertone
+function evaluateChromaticFit(h,s,l,season,seasonKey,comboHexes){
+  let penalty=0;
+  const satRange =SEASON_SAT_RANGES [seasonKey]||{min:25,max:75};
+  const lightRange=SEASON_LIGHT_RANGES[seasonKey]||{min:20,max:85};
+
+  // Saturation distance from season range
+  if(s<satRange.min){const d=satRange.min-s;penalty+=d>22?2:1;}
+  else if(s>satRange.max){const d=s-satRange.max;penalty+=d>22?2:1;}
+
+  // Lightness distance from season range
+  if(l<lightRange.min){const d=lightRange.min-l;penalty+=d>22?2:1;}
+  else if(l>lightRange.max){const d=l-lightRange.max;penalty+=d>22?2:1;}
+
+  // Hue/undertone tension (only meaningful above s>22)
+  if(s>22){
+    const isWarmHue=h<70||h>310;
+    const isCoolHue=h>165&&h<280;
+    if(season.undertone==="warm"&&isCoolHue&&s>42)penalty+=1;
+    if(season.undertone==="cool"&&isWarmHue&&s>42)penalty+=1;
+  }
+
+  if(penalty===0)return"ok";
+  if(penalty<=2)return"caution";
   return"clash";
 }
 
+// Main entry point — contextual: receives full outfit hex list for neutral evaluation
+function colorSeasonFit(hex,season,comboHexes=[],material="normal"){
+  const[h,s,l]=hexToHsl(hex);
+  const seasonKey=(season.base||"autumn")+"-"+(season.sub||"true");
+
+  // Jeans: treat as near-neutral, almost always ok
+  // Only caution when multiple very dark neutrals coexist (denim + black + black)
+  if(material==="jeans"){
+    const darkNeutrals=comboHexes.filter(c=>{const[,cs,cl]=hexToHsl(c);return cl<20&&cs<20;});
+    return darkNeutrals.length>=2?"caution":"ok";
+  }
+
+  // Neutrals path (s<10 covers near-black, near-white, all greys)
+  const isNearBlack=l<15&&s<15;
+  const isNearWhite=l>88&&s<12;
+  if(s<10)return evaluateNeutralFit(l,isNearBlack,isNearWhite,comboHexes);
+
+  // Chromatic path
+  return evaluateChromaticFit(h,s,l,season,seasonKey,comboHexes);
+}
+
 function FitBadge({fit}){
-  if(fit==="ok")return null;
-  const bg=fit==="caution"?"#D4870A":"#C03030";
-  const label=fit==="caution"?"Fuori palette":"Colore distante";
+  if(!fit||fit==="ok")return null;
+  const bg=fit==="caution"?"#B8780A":"#B02828";
+  const label=fit==="caution"?"Fuori palette":"Lontano";
   return(
     <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,
-      background:bg,color:"#fff",letterSpacing:"0.04em",flexShrink:0}}>
+      background:bg,color:"#fff",letterSpacing:"0.04em",flexShrink:0,whiteSpace:"nowrap"}}>
       {label}
     </span>
   );
@@ -68,9 +170,9 @@ function FitBadge({fit}){
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function normalizeEntry(v){
-  if(!v)return{hex:"#8B7355",secondaries:[],pattern:"solid"};
-  if(typeof v==="string")return{hex:v,secondaries:[],pattern:"solid"};
-  return{hex:v.hex||"#8B7355",secondaries:v.secondaries||[],pattern:v.pattern||"solid"};
+  if(!v)return{hex:"#8B7355",secondaries:[],pattern:"solid",material:"normal"};
+  if(typeof v==="string")return{hex:v,secondaries:[],pattern:"solid",material:"normal"};
+  return{hex:v.hex||"#8B7355",secondaries:v.secondaries||[],pattern:v.pattern||"solid",material:v.material||"normal"};
 }
 function avgHue(weightedHues){
   const total=weightedHues.reduce((a,{w})=>a+w,0);
@@ -191,7 +293,7 @@ function buildHarmonyPool(type,anchorH,profile,jitter=0){
   switch(type){
     case"mono":return Array.from({length:8},(_,i)=>hslToHex(H,Math.min(80,ss*100*(0.6+i*0.05)),cl(lMin+i*((lMax-lMin)/7))));
     case"analog":return[-50,-28,-12,0,12,28,50,35].map((d,i)=>hslToHex(H+d,ss*80,cl(lMid+[-8,5,12,0,-10,6,-5,8][i])));
-    case"comp":{const c=H+180;return[...[-12,0,12].map((d,i)=>hslToHex(H+d,ss*82,cl(lMid+[8,0,-8][i]))),  ...[-10,0,10].map((d,i)=>hslToHex(c+d,ss*78,cl(lMid+[-5,5,0][i]))),hslToHex(H,12,cl(lMax-5)),hslToHex(H,8,cl(lMin+5))];}
+    case"comp":{const c=H+180;return[...[-12,0,12].map((d,i)=>hslToHex(H+d,ss*82,cl(lMid+[8,0,-8][i]))), ...[-10,0,10].map((d,i)=>hslToHex(c+d,ss*78,cl(lMid+[-5,5,0][i]))),hslToHex(H,12,cl(lMax-5)),hslToHex(H,8,cl(lMin+5))];}
     case"split":return[0,8,-8,150,158,210,218,160].map((d,i)=>{const b=i<3?H:i<5?H+150:i<7?H+210:H+145;return hslToHex(b+(i<3?[0,8,-8][i]:i<5?[0,8][i-3]:i<7?[0,8][i-5]:0),ss*80,cl(lMid+[-3,8,-8,0,6,-5,4,2][i]));});
     case"triad":return[0,6,-6,120,126,114,240,246].map((d,i)=>hslToHex(H+d,ss*80,cl(lMid+[0,8,-8,4,-6,10,-4,6][i])));
     case"tetrad":return[0,90,180,270,6,96,186,276].map((d,i)=>hslToHex(H+d,ss*78,cl(lMid+[0,6,-6,3,-3,8,-5,4][i])));
@@ -213,10 +315,18 @@ function garmentWeightedHues(entry){
 
 function generateCombo(type,profile,fixedMap,excludedIds,season,seed){
   const rand=seededRand(seed);
+  const presentIds=GARMENTS.filter(g=>!excludedIds.includes(g.id)).map(g=>g.id);
+  const garmentWeights=computeGarmentWeights(presentIds);
+
   const fixedEntries=Object.entries(fixedMap).filter(([id])=>!excludedIds.includes(id));
   let anchorH;
   if(fixedEntries.length>0){
-    anchorH=avgHue(fixedEntries.flatMap(([,entry])=>garmentWeightedHues(entry)));
+    // Weight anchor by garment visual weight × internal color percentages
+    const weightedHues=fixedEntries.flatMap(([id,entry])=>{
+      const gw=(garmentWeights[id]||10)/100;
+      return garmentWeightedHues(entry).map(({h,w})=>({h,w:w*gw}));
+    });
+    anchorH=avgHue(weightedHues);
   } else {
     const anchors=SEASON_ANCHORS[season.base]||SEASON_ANCHORS.autumn;
     anchorH=anchors[Math.floor(rand()*anchors.length)];
@@ -229,9 +339,13 @@ function generateCombo(type,profile,fixedMap,excludedIds,season,seed){
   for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
   let pi=0;
   return GARMENTS.filter(g=>!excludedIds.includes(g.id)).map(g=>{
-    if(fixedMap[g.id]){const e=normalizeEntry(fixedMap[g.id]);return{id:g.id,...e,fixed:true,name:colorName(e.hex)};}
+    const weight=garmentWeights[g.id]||5;
+    if(fixedMap[g.id]){
+      const e=normalizeEntry(fixedMap[g.id]);
+      return{id:g.id,...e,fixed:true,name:colorName(e.hex),weight};
+    }
     const hex=shuffled[pi%shuffled.length];pi++;
-    return{id:g.id,hex,name:colorName(hex),fixed:false};
+    return{id:g.id,hex,name:colorName(hex),fixed:false,weight,material:"normal"};
   });
 }
 
@@ -355,10 +469,8 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
       const dpr=window.devicePixelRatio||1;
       const cssW=container.clientWidth;
       const cssH=Math.round(cssW*(3/4));
-      cv.style.width=cssW+"px";
-      cv.style.height=cssH+"px";
-      cv.width=Math.round(cssW*dpr);
-      cv.height=Math.round(cssH*dpr);
+      cv.style.width=cssW+"px";cv.style.height=cssH+"px";
+      cv.width=Math.round(cssW*dpr);cv.height=Math.round(cssH*dpr);
       canvasSize.current={w:cssW,h:cssH};
       const ctx=cv.getContext("2d");
       ctx.fillStyle="#000";ctx.fillRect(0,0,cv.width,cv.height);
@@ -371,17 +483,13 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
   },[]);
   useEffect(()=>{if(imgSrc)drawImage(imgSrc);},[imgSrc,drawImage]);
 
-  // Convert clientX/Y (viewport coords) → CSS coords relative to canvas
-  // Uses the canvas element's own getBoundingClientRect — no scroll offset needed
   const toCss=useCallback((clientX,clientY)=>{
     const cv=canvasRef.current;if(!cv)return{x:0,y:0};
     const rect=cv.getBoundingClientRect();
-    // rect.left/top are already in viewport coords — clientX/Y are too
-    // So the subtraction is exact, no scroll correction required
-    const x=clientX-rect.left;
-    const y=clientY-rect.top;
-    const{w,h}=canvasSize.current;
-    return{x:Math.max(0,Math.min(w,x)),y:Math.max(0,Math.min(h,y))};
+    return{
+      x:Math.max(0,Math.min(canvasSize.current.w,clientX-rect.left)),
+      y:Math.max(0,Math.min(canvasSize.current.h,clientY-rect.top)),
+    };
   },[]);
 
   const pick=useCallback((cssX,cssY)=>{
@@ -400,78 +508,25 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
     setLocal(hex);setZoom({visible:true,x:cssX,y:cssY,color:hex});
   },[]);
 
-  const onTS=useCallback(e=>{
-    e.preventDefault();isDragging.current=true;
-    const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);
-  },[pick,toCss]);
-  const onTM=useCallback(e=>{
-    if(!isDragging.current)return;e.preventDefault();
-    const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);
-  },[pick,toCss]);
-  const onTE=useCallback(e=>{
-    e.preventDefault();isDragging.current=false;
-    setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);
-  },[]);
-  const onCK=useCallback(e=>{
-    const{x,y}=toCss(e.clientX,e.clientY);pick(x,y);
-    setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);
-  },[pick,toCss]);
-  const handleFile=e=>{
-    const f=e.target.files[0];if(!f)return;
-    const r=new FileReader();
-    r.onload=ev=>{setImgSrc(ev.target.result);setMode("image");};
-    r.readAsDataURL(f);
-  };
+  const onTS=useCallback(e=>{e.preventDefault();isDragging.current=true;const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);},[pick,toCss]);
+  const onTM=useCallback(e=>{if(!isDragging.current)return;e.preventDefault();const t=e.touches[0];const{x,y}=toCss(t.clientX,t.clientY);pick(x,y);},[pick,toCss]);
+  const onTE=useCallback(e=>{e.preventDefault();isDragging.current=false;setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);},[]);
+  const onCK=useCallback(e=>{const{x,y}=toCss(e.clientX,e.clientY);pick(x,y);setTimeout(()=>setZoom(z=>({...z,visible:false})),1200);},[pick,toCss]);
+  const handleFile=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setImgSrc(ev.target.result);setMode("image");};r.readAsDataURL(f);};
 
-  // Zoom bubble: crosshair at exact point + color preview floating above/below
   const ZoomOverlay=zoom.visible&&(()=>{
     const{w,h}=canvasSize.current;
     const bubbleW=60,bubbleH=60;
-    // Float above if in lower half, below if in upper half
     const showAbove=zoom.y>h*0.45;
-    const bubbleTop=showAbove
-      ?Math.max(2,zoom.y-80)
-      :Math.min(h-bubbleH-2,zoom.y+26);
+    const bubbleTop=showAbove?Math.max(2,zoom.y-82):Math.min(h-bubbleH-2,zoom.y+24);
     const bubbleLeft=Math.max(2,Math.min(zoom.x-bubbleW/2,w-bubbleW-2));
     return(
       <>
-        {/* Crosshair ring — always exactly at touch point */}
-        <div style={{
-          position:"absolute",
-          left:zoom.x-13,top:zoom.y-13,
-          width:26,height:26,
-          borderRadius:"50%",
-          border:"2px solid rgba(255,255,255,0.95)",
-          boxShadow:"0 0 0 1.5px rgba(0,0,0,0.7)",
-          pointerEvents:"none",
-        }}/>
-        {/* Small center dot */}
-        <div style={{
-          position:"absolute",
-          left:zoom.x-2,top:zoom.y-2,
-          width:4,height:4,
-          borderRadius:"50%",
-          background:"rgba(255,255,255,0.9)",
-          boxShadow:"0 0 0 1px rgba(0,0,0,0.6)",
-          pointerEvents:"none",
-        }}/>
-        {/* Color preview bubble — floats above or below, never overlaps crosshair */}
-        <div style={{
-          position:"absolute",
-          left:bubbleLeft,top:bubbleTop,
-          width:bubbleW,height:bubbleH,
-          borderRadius:"50%",
-          background:zoom.color,
-          border:"3px solid rgba(255,255,255,0.95)",
-          boxShadow:"0 4px 20px rgba(0,0,0,0.45)",
-          pointerEvents:"none",
-          display:"flex",flexDirection:"column",
-          alignItems:"center",justifyContent:"center",gap:2,
-        }}>
+        <div style={{position:"absolute",left:zoom.x-13,top:zoom.y-13,width:26,height:26,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.95)",boxShadow:"0 0 0 1.5px rgba(0,0,0,0.7)",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",left:zoom.x-2,top:zoom.y-2,width:4,height:4,borderRadius:"50%",background:"rgba(255,255,255,0.9)",boxShadow:"0 0 0 1px rgba(0,0,0,0.6)",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",left:bubbleLeft,top:bubbleTop,width:bubbleW,height:bubbleH,borderRadius:"50%",background:zoom.color,border:"3px solid rgba(255,255,255,0.95)",boxShadow:"0 4px 20px rgba(0,0,0,0.45)",pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
           <div style={{width:7,height:7,borderRadius:"50%",background:contrastColor(zoom.color),opacity:0.65}}/>
-          <div style={{fontSize:6,fontFamily:"monospace",color:contrastColor(zoom.color),opacity:0.8,letterSpacing:"0.03em"}}>
-            {zoom.color.toUpperCase()}
-          </div>
+          <div style={{fontSize:6,fontFamily:"monospace",color:contrastColor(zoom.color),opacity:0.8}}>{zoom.color.toUpperCase()}</div>
         </div>
       </>
     );
@@ -516,17 +571,8 @@ function ColorPickerModal({value,onClose,onChange,savedColors,onSave}){
               ):(
                 <div>
                   <div style={{fontSize:12,color:T.text2,marginBottom:8,textAlign:"center"}}>👆 Tocca e trascina per campionare</div>
-                  <div
-                    ref={containerRef}
-                    style={{width:"100%",position:"relative",borderRadius:14,overflow:"hidden",
-                      border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(0,0,0,0.1)",
-                      touchAction:"none",background:"#000"}}
-                  >
-                    <canvas
-                      ref={canvasRef}
-                      style={{display:"block",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}}
-                      onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}
-                    />
+                  <div ref={containerRef} style={{width:"100%",position:"relative",borderRadius:14,overflow:"hidden",border:T.dark?"1.5px solid rgba(255,255,255,0.12)":"1.5px solid rgba(0,0,0,0.1)",touchAction:"none",background:"#000"}}>
+                    <canvas ref={canvasRef} style={{display:"block",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none"}} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onClick={onCK}/>
                     {ZoomOverlay}
                   </div>
                   <button onClick={()=>{setImgSrc(null);if(fileRef.current)fileRef.current.value="";}} style={{marginTop:8,width:"100%",padding:"9px",border:T.inputB,borderRadius:10,background:T.input,cursor:"pointer",fontSize:12,color:T.text2}}>Cambia foto</button>
@@ -572,6 +618,7 @@ function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
     s[i]={...s[i],pct:Math.max(5,Math.min(maxPct,pct))};
     onUpdate({...e,secondaries:s});
   };
+  const isJeans=e.material==="jeans";
   return(
     <div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -580,13 +627,13 @@ function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
           <div style={{fontSize:12,fontWeight:600,color:T.text}}>{colorName(e.hex)}</div>
           <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{e.hex.toUpperCase()} · {Math.round(primaryPct)}%</div>
         </div>
-        {(e.secondaries||[]).length<2&&(
+        {(e.secondaries||[]).length<2&&!isJeans&&(
           <button onClick={addSecondary} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:999,border:"1.5px solid "+T.sep,background:T.input,cursor:"pointer",fontSize:11,color:T.text2}}>
             <Plus size={10}/> Colore
           </button>
         )}
       </div>
-      {(e.secondaries||[]).map((s,i)=>(
+      {!isJeans&&(e.secondaries||[]).map((s,i)=>(
         <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingLeft:12,borderLeft:"2px solid "+T.sep}}>
           <div style={{width:30,height:30,borderRadius:8,background:s.hex,border:"1.5px solid rgba(255,255,255,0.4)",cursor:"pointer",flexShrink:0}} onClick={()=>setPickerTarget(i)}/>
           <div style={{flex:1}}><div style={{fontSize:11,color:T.text2}}>{colorName(s.hex)}</div></div>
@@ -598,15 +645,30 @@ function GarmentColorEditor({entry,onUpdate,savedGarment,onSaveGarment,T}){
           <button onClick={()=>removeSecondary(i)} style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",cursor:"pointer",color:T.text3,display:"flex",alignItems:"center",justifyContent:"center"}}><Trash2 size={12}/></button>
         </div>
       ))}
-      <div style={{marginTop:8}}>
-        <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>Fantasia</div>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {PATTERN_OPTIONS.map(p=>{
-            const active=(e.pattern||"solid")===p.id;
-            return<button key={p.id} onClick={()=>onUpdate({...e,pattern:p.id})} style={{padding:"4px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{p.label}</button>;
-          })}
-        </div>
+      {/* Jeans toggle — replaces pattern/secondary when active */}
+      <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+        <button
+          onClick={()=>onUpdate({...e,material:isJeans?"normal":"jeans",secondaries:isJeans?e.secondaries:[],pattern:isJeans?e.pattern:"solid"})}
+          style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:999,
+            border:isJeans?"1.5px solid "+T.text:"1.5px solid "+T.sep,
+            background:isJeans?T.card:T.input,cursor:"pointer",fontSize:11,
+            fontWeight:isJeans?700:500,color:isJeans?T.text:T.text2,transition:"all 0.15s"}}>
+          {isJeans&&<Check size={9} color={T.text}/>}
+          👖 Denim / Jeans
+        </button>
+        {isJeans&&<span style={{fontSize:10,color:T.text3,fontStyle:"italic"}}>Colore libero — compatibilità allargata</span>}
       </div>
+      {!isJeans&&(
+        <div style={{marginTop:10}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.text3,marginBottom:6}}>Fantasia</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {PATTERN_OPTIONS.map(p=>{
+              const active=(e.pattern||"solid")===p.id;
+              return<button key={p.id} onClick={()=>onUpdate({...e,pattern:p.id})} style={{padding:"4px 10px",borderRadius:999,border:active?"1.5px solid "+T.text:"1.5px solid "+T.sep,background:active?T.card:T.input,cursor:"pointer",fontSize:11,fontWeight:active?700:500,color:active?T.text:T.text2}}>{p.label}</button>;
+            })}
+          </div>
+        </div>
+      )}
       {pickerTarget==="primary"&&<ColorPickerModal value={e.hex} onClose={()=>setPickerTarget(null)} onChange={hex=>onUpdate({...e,hex})} savedColors={savedGarment} onSave={onSaveGarment}/>}
       {typeof pickerTarget==="number"&&<ColorPickerModal value={(e.secondaries||[])[pickerTarget]?.hex||"#888888"} onClose={()=>setPickerTarget(null)} onChange={hex=>updateSecondaryHex(pickerTarget,hex)} savedColors={savedGarment} onSave={onSaveGarment}/>}
     </div>
@@ -662,6 +724,11 @@ function ProfileTab({skinColor,setSkinColor,eyeColor,setEyeColor,hairColor,setHa
 function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onSaveGarment,season}){
   const T=useT();
   const[expandedId,setExpandedId]=useState(null);
+
+  // Compute weights based on currently non-excluded garments
+  const presentIds=GARMENTS.filter(g=>(modes[g.id]||"auto")!=="excluded").map(g=>g.id);
+  const garmentWeights=computeGarmentWeights(presentIds);
+
   return(
     <div style={{padding:"1rem"}}>
       <p style={{fontSize:12,color:T.text2,marginBottom:"0.875rem",lineHeight:1.6}}>
@@ -673,7 +740,10 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
           const excluded=mode==="excluded",fixed=mode==="fixed";
           const entry=normalizeEntry(fixedColors[g.id]);
           const isExp=expandedId===g.id;
-          const fit=fixed?colorSeasonFit(entry.hex,season):null;
+          const weight=garmentWeights[g.id]||0;
+          // Fit check for fixed garments — no combo context in wardrobe view
+          const fit=fixed&&!excluded?colorSeasonFit(entry.hex,season,[],entry.material):"ok";
+
           const mBtn=(m,Icon,label)=>{
             const active=mode===m;
             return(
@@ -682,19 +752,27 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
               </button>
             );
           };
+
           return(
             <div key={g.id} style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:16,border:T.cardB,boxShadow:T.cardS,overflow:"hidden",opacity:excluded?0.45:1,transition:"opacity 0.2s"}}>
               <div style={{padding:"0.875rem 1rem",display:"flex",alignItems:"center",gap:12}}>
-                <div style={{flex:1}}>
+                <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     <div style={{fontSize:14,fontWeight:600,color:T.text,textDecoration:excluded?"line-through":"none"}}>{g.label}</div>
-                    {fit&&fit!=="ok"&&<FitBadge fit={fit}/>}
+                    {/* Weight chip — shows visual contribution */}
+                    {!excluded&&weight>0&&(
+                      <span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,
+                        background:T.input,color:T.text3,letterSpacing:"0.03em"}}>
+                        {weight}%
+                      </span>
+                    )}
+                    {fit!=="ok"&&<FitBadge fit={fit}/>}
                   </div>
                   {fixed&&!excluded&&(
                     <div style={{fontSize:11,color:T.text2,marginTop:2}}>
-                      {colorName(entry.hex)}
+                      {entry.material==="jeans"?"👖 Denim":colorName(entry.hex)}
                       {(entry.secondaries||[]).length>0&&" + "+(entry.secondaries||[]).length+" col."}
-                      {entry.pattern&&entry.pattern!=="solid"&&" · "+(PATTERN_OPTIONS.find(p=>p.id===entry.pattern)?.label||"")}
+                      {entry.pattern&&entry.pattern!=="solid"&&entry.material!=="jeans"&&" · "+(PATTERN_OPTIONS.find(p=>p.id===entry.pattern)?.label||"")}
                     </div>
                   )}
                   {excluded&&<div style={{fontSize:11,color:T.text3,marginTop:2}}>Non incluso</div>}
@@ -728,30 +806,56 @@ function WardrobeTab({modes,setModes,fixedColors,setFixedColors,savedGarment,onS
           );
         })}
       </div>
+      <div style={{marginTop:"0.875rem",padding:"0.75rem",background:T.card,borderRadius:12,border:T.cardB,fontSize:11,color:T.text3,lineHeight:1.6}}>
+        La % indica il contributo visivo del capo all'outfit. Cambia dinamicamente in base agli strati presenti.
+      </div>
     </div>
   );
 }
 
 // ─── OutfitCard ───────────────────────────────────────────────────────────────
-function OutfitCard({combo,index,profile}){
+function OutfitCard({combo,index,season}){
   const T=useT();
   const[expanded,setExpanded]=useState(false);
   const h=HARMONIES.find(h=>h.id===combo.type);
-  // Count clashes among all items for the compact header
-  const clashCount=combo.items.filter(item=>{
-    const fit=colorSeasonFit(item.hex,profile);
-    return fit==="clash"||(item.fixed&&fit==="caution");
-  }).length;
+
+  // All hex values in combo — used for contextual neutral evaluation
+  const allHexes=combo.items.map(item=>item.hex);
+
+  // Compute fit for each item with full combo context
+  const itemsWithFit=combo.items.map(item=>({
+    ...item,
+    fit:colorSeasonFit(
+      item.hex,
+      season,
+      allHexes.filter(hx=>hx!==item.hex), // other hexes for context
+      item.material||"normal"
+    ),
+  }));
+
+  // Weighted clash score: sum weight of clashing items
+  const clashWeight=itemsWithFit
+    .filter(item=>item.fit==="clash")
+    .reduce((a,item)=>a+(item.weight||5),0);
+  const cautionWeight=itemsWithFit
+    .filter(item=>item.fit==="caution")
+    .reduce((a,item)=>a+(item.weight||5),0);
+  const hasIssues=clashWeight>0||cautionWeight>=20;
+
   return(
     <div style={{background:T.card,backdropFilter:T.bd,WebkitBackdropFilter:T.bd,borderRadius:20,border:T.cardB,boxShadow:T.cardS,overflow:"hidden"}}>
       <div style={{padding:"1rem 1.125rem",cursor:"pointer"}} onClick={()=>setExpanded(e=>!e)}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
           <span style={{fontSize:10,fontFamily:"monospace",color:T.text3,fontWeight:700}}>{String(index+1).padStart(2,"0")}</span>
           <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"Georgia,serif",flex:1}}>{h?.name}</span>
-          {clashCount>0&&(
-            <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:6,background:"rgba(200,60,40,0.15)",border:"1px solid rgba(200,60,40,0.3)"}}>
-              <AlertTriangle size={9} color="#C03030"/>
-              <span style={{fontSize:9,fontWeight:700,color:"#C03030"}}>{clashCount}</span>
+          {hasIssues&&(
+            <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:6,
+              background:clashWeight>0?"rgba(180,40,40,0.12)":"rgba(180,120,10,0.12)",
+              border:clashWeight>0?"1px solid rgba(180,40,40,0.3)":"1px solid rgba(180,120,10,0.3)"}}>
+              <AlertTriangle size={9} color={clashWeight>0?"#B02828":"#A07010"}/>
+              <span style={{fontSize:9,fontWeight:700,color:clashWeight>0?"#B02828":"#A07010"}}>
+                {clashWeight>0?`${clashWeight}% clash`:`${cautionWeight}% attenzione`}
+              </span>
             </div>
           )}
           <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",padding:"3px 7px",borderRadius:6,background:T.input,color:T.text2}}>{h?.tag}</div>
@@ -763,25 +867,30 @@ function OutfitCard({combo,index,profile}){
       </div>
       {expanded&&(
         <div style={{borderTop:"1px solid "+T.sep,padding:"0.875rem 1.125rem",background:T.dark?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.3)"}}>
-          {combo.items.map((item,i)=>{
-            const fit=colorSeasonFit(item.hex,profile);
-            return(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:10,marginBottom:10,borderBottom:i<combo.items.length-1?"1px solid "+T.sep:"none"}}>
-                <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>
-                      {GARMENTS.find(g=>g.id===item.id)?.short||item.id}
-                    </span>
-                    {item.fixed&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>FISSO</span>}
-                    {fit!=="ok"&&<FitBadge fit={fit}/>}
-                  </div>
-                  <div style={{fontSize:11,color:T.text2}}>{item.name}</div>
+          {itemsWithFit.map((item,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:10,marginBottom:10,borderBottom:i<itemsWithFit.length-1?"1px solid "+T.sep:"none"}}>
+              <div style={{width:22,height:22,borderRadius:6,background:item.hex,border:"1px solid rgba(255,255,255,0.4)",flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,fontWeight:600,color:T.text}}>
+                    {GARMENTS.find(g=>g.id===item.id)?.short||item.id}
+                  </span>
+                  {/* Weight chip */}
+                  <span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:T.input,color:T.text3}}>
+                    {item.weight||0}%
+                  </span>
+                  {item.fixed&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>FISSO</span>}
+                  {item.material==="jeans"&&<span style={{fontSize:9,color:T.text2,background:T.input,padding:"1px 5px",borderRadius:4,fontWeight:700}}>👖</span>}
+                  {item.fit!=="ok"&&<FitBadge fit={item.fit}/>}
                 </div>
-                <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{item.hex.toUpperCase()}</div>
+                <div style={{fontSize:11,color:T.text2}}>{item.name}</div>
               </div>
-            );
-          })}
+              <div style={{fontSize:10,fontFamily:"monospace",color:T.text3}}>{item.hex.toUpperCase()}</div>
+            </div>
+          ))}
+          <div style={{fontSize:10,color:T.text3,textAlign:"right",marginTop:2}}>
+            % = contributo visivo stimato
+          </div>
         </div>
       )}
     </div>
@@ -810,10 +919,12 @@ function ResultsTab({combos,comboCount,setComboCount,onRefresh,season}){
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {combos.slice(0,comboCount).map((combo,i)=>(
-          <OutfitCard key={combo.type+"-"+i} combo={combo} index={i} profile={season}/>
+          <OutfitCard key={combo.type+"-"+i} combo={combo} index={i} season={season}/>
         ))}
       </div>
-      <div style={{marginTop:"1rem",fontSize:11,color:T.text3,textAlign:"center"}}>Tocca una card per i dettagli · <AlertTriangle size={9} style={{verticalAlign:"middle"}}/> = colore fuori stagione</div>
+      <div style={{marginTop:"1rem",fontSize:11,color:T.text3,textAlign:"center",lineHeight:1.7}}>
+        Tocca una card per i dettagli · % = peso visivo · <AlertTriangle size={9} style={{verticalAlign:"middle"}}/> = fuori stagione
+      </div>
     </div>
   );
 }
@@ -830,7 +941,7 @@ export default function App(){
   const[modes,setModes]=useState(()=>lsGet("chs_modes",Object.fromEntries(GARMENTS.map(g=>[g.id,"auto"]))));
   const[fixedColors,setFixedColors]=useState(()=>{
     const saved=lsGet("chs_fixedColors",null);
-    const defaults=Object.fromEntries(GARMENTS.map(g=>[g.id,{hex:"#8B7355",secondaries:[],pattern:"solid"}]));
+    const defaults=Object.fromEntries(GARMENTS.map(g=>[g.id,{hex:"#8B7355",secondaries:[],pattern:"solid",material:"normal"}]));
     if(!saved)return defaults;
     return Object.fromEntries(GARMENTS.map(g=>[g.id,normalizeEntry(saved[g.id])]));
   });
