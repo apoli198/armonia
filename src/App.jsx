@@ -499,23 +499,132 @@ function garmentWeightedHues(entry) {
   return result;
 }
 
-// ─── Pool sanitization ────────────────────────────────────────────────────────
-// Pool colors from buildHarmonyPoolV2 are already generated in fabric-space
-// (buildHarmonyPoolV2 outputs hslToHex values targeting fabric-plausible S/L).
-// sanitizePool applies evaluateColorFit in fabric-space and replaces any color
-// with penalty >= 2 with a desaturated variant (same hue, S pulled to ~10 fabric,
-// L moved toward the profile's midpoint in fabric-space).
-function sanitizePool(pool, profile) {
-  const lMid = profile.depth === "deep" ? 35 : 68; // fabric-space midpoint
-  return pool.map(hex => {
-    const penalty = evaluateColorFit(hex, profile, [], "normal", 25);
-    if (penalty < 2) return hex;
-    const [h,, l] = hexToHsl(hex);
-    // Desaturate to a safe neutral: S~8 fabric ≈ S~12 screen (inverse power law)
-    // L nudged toward midpoint
-    const safeL = (l + lMid) / 2;
-    return hslToHex(h, 12, safeL);
-  });
+// ─── Season anchor color sets ─────────────────────────────────────────────────
+// 6 hues per season in fabric-space [H, S, L].
+// Used as candidate anchors when no fixed garment is present (Case 2).
+const SEASON_ANCHORS = {
+  "spring-true":   [[28,52,62],[72,46,58],[12,48,55],[155,38,52],[195,34,58],[48,42,65]],
+  "spring-light":  [[32,38,72],[18,32,68],[85,28,70],[175,24,68],[210,22,72],[55,30,74]],
+  "spring-warm":   [[22,60,58],[8,56,52],[45,58,60],[95,44,54],[165,38,50],[30,52,64]],
+  "summer-true":   [[215,32,58],[265,24,62],[185,28,55],[330,22,60],[170,26,52],[240,20,65]],
+  "summer-light":  [[205,22,72],[255,18,70],[175,20,68],[315,16,72],[190,18,75],[230,16,76]],
+  "summer-soft":   [[220,18,60],[270,14,58],[195,16,55],[340,12,62],[210,14,52],[250,12,64]],
+  "autumn-true":   [[28,52,42],[15,58,38],[48,48,45],[90,38,40],[165,30,38],[55,44,48]],
+  "autumn-warm":   [[22,62,48],[8,65,42],[38,58,44],[85,48,42],[35,55,38],[18,60,52]],
+  "autumn-deep":   [[20,58,32],[8,62,28],[40,52,35],[95,42,30],[165,34,32],[55,48,28]],
+  "winter-true":   [[215,52,42],[265,48,45],[185,40,38],[330,44,40],[240,50,35],[195,42,48]],
+  "winter-cool":   [[225,58,38],[275,52,42],[195,44,35],[315,50,36],[245,56,30],[210,46,44]],
+  "winter-bright": [[220,65,48],[270,60,52],[185,52,42],[335,58,45],[250,62,38],[195,50,54]],
+  "neutral-light-low":    [[220,18,60],[270,14,58],[195,16,55],[340,12,62],[210,14,52],[250,12,64]],
+  "neutral-light-medium": [[28,52,62],[72,46,58],[12,48,55],[155,38,52],[195,34,58],[48,42,65]],
+  "neutral-light-high":   [[215,32,58],[265,24,62],[185,28,55],[330,22,60],[170,26,52],[240,20,65]],
+  "neutral-deep-low":     [[28,52,42],[15,58,38],[48,48,45],[90,38,40],[165,30,38],[55,44,48]],
+  "neutral-deep-medium":  [[215,52,42],[265,48,45],[185,40,38],[330,44,40],[240,50,35],[195,42,48]],
+  "neutral-deep-high":    [[220,65,48],[270,60,52],[185,52,42],[335,58,45],[250,62,38],[195,50,54]],
+};
+
+// ─── Anchor resolution ────────────────────────────────────────────────────────
+// Case 1: fixed garments present → hue of dominant (heaviest) fixed garment,
+//         secondaries and other fixed garments contribute as minor weights (Plan B).
+// Case 2: no fixed garments → sample randomly from season anchor set.
+function resolveAnchorH(fixedEntries, garmentWeights, seasonKey, rand) {
+  if (fixedEntries.length > 0) {
+    const [domId, domEntry] = fixedEntries.reduce((best, cur) =>
+      (garmentWeights[cur[0]] || 0) > (garmentWeights[best[0]] || 0) ? cur : best
+    );
+    const domWeight = garmentWeights[domId] || 10;
+    const weightedHues = garmentWeightedHues(domEntry).map(({ h, w }) => ({
+      h, w: w * (domWeight / 100),
+    }));
+    for (const [id, entry] of fixedEntries) {
+      if (id === domId) continue;
+      const gw = (garmentWeights[id] || 5) / 100;
+      for (const { h, w } of garmentWeightedHues(entry)) weightedHues.push({ h, w: w * gw });
+    }
+    return avgHue(weightedHues);
+  }
+  const anchors = SEASON_ANCHORS[seasonKey] || SEASON_ANCHORS["spring-true"];
+  return anchors[Math.floor(rand() * anchors.length)][0];
+}
+
+// ─── Secondary hex extraction ─────────────────────────────────────────────────
+function secondaryHexes(entry) {
+  return (entry.secondaries || []).filter(s => s.hex).map(s => s.hex);
+}
+
+// ─── In-context evaluation ────────────────────────────────────────────────────
+// Evaluates a candidate hex against already-assigned (heavier) garments.
+// Combo flag considers assigned items + their secondaries.
+function evaluateInContext(hex, material, weight, profile, assignedItems) {
+  const assignedHexes = assignedItems.flatMap(it => [it.hex, ...secondaryHexes(it)]);
+  const seasonLevel = evaluateColorFit(hex, profile, assignedHexes, material, weight);
+  const comboItems = [
+    ...assignedItems.map(it => ({ hex: it.hex, weight: it.weight })),
+    { hex, weight },
+  ];
+  const comboResults = evaluateComboFits(comboItems);
+  return { season: seasonLevel, combo: comboResults[comboResults.length - 1] };
+}
+
+// ─── Targeted correction ──────────────────────────────────────────────────────
+// Nudges H/S/L along 4 axes (undertone → depth → intensity → contrast)
+// until flags drop below 2 or budget (12 steps) is exhausted.
+// Step sizes: ΔH=5°, ΔL=6, ΔS=8. Max 3 steps per axis.
+// Fallback: contextual neutral (black/grey/white).
+const _STEP_H = 5, _STEP_L = 6, _STEP_S = 8, _STEPS_PER_AXIS = 3;
+
+function correctColor(hex, material, weight, profile, assignedItems) {
+  let [h, s, l] = hexToHsl(hex);
+
+  const check = () => {
+    const c = hslToHex(h, s, l);
+    const { season, combo } = evaluateInContext(c, material, weight, profile, assignedItems);
+    return { ok: season < 2 && combo < 2, hex: c };
+  };
+
+  // Undertone: shift H toward warm or cool pole for chromatic colors
+  for (let k = 0; k < _STEPS_PER_AXIS; k++) {
+    const { ok, hex: c } = check();
+    if (ok) return c;
+    const [, fS] = normFabric(h, s, l);
+    if (fS > 24) {
+      if (profile.undertone === "warm") h = ((h - _STEP_H) + 360) % 360;
+      else if (profile.undertone === "cool") h = (h + _STEP_H) % 360;
+    }
+  }
+
+  // Depth: push L toward profile target
+  const targetL = profile.depth === "deep" ? 35 : 65;
+  for (let k = 0; k < _STEPS_PER_AXIS; k++) {
+    const { ok, hex: c } = check();
+    if (ok) return c;
+    l = Math.max(5, Math.min(90, l + (l < targetL ? _STEP_L : -_STEP_L)));
+  }
+
+  // Intensity: push S toward profile target
+  const targetS = profile.intensity === "high" ? 45 : profile.intensity === "low" ? 12 : 28;
+  for (let k = 0; k < _STEPS_PER_AXIS; k++) {
+    const { ok, hex: c } = check();
+    if (ok) return c;
+    s = Math.max(0, Math.min(68, s + (s < targetS ? _STEP_S : -_STEP_S)));
+  }
+
+  // Contrast: push L away from heaviest assigned item to break dark-on-dark
+  if (assignedItems.length > 0) {
+    const [,, refL] = normFabric(...hexToHsl(assignedItems[0].hex));
+    for (let k = 0; k < _STEPS_PER_AXIS; k++) {
+      const { ok, hex: c } = check();
+      if (ok) return c;
+      const [,, myL] = normFabric(h, s, l);
+      l = Math.max(5, Math.min(90, l + (myL < refL ? -_STEP_L : _STEP_L)));
+    }
+  }
+
+  const { ok, hex: c } = check();
+  if (ok) return c;
+
+  // Contextual neutral fallback
+  return profile.depth === "deep" ? "#1a1a1a" : profile.depth === "light" ? "#f0f0f0" : "#888888";
 }
 
 // ─── Validate outfit balance ──────────────────────────────────────────────────
@@ -536,150 +645,91 @@ function validateOutfitBalance(items, profile) {
 }
 
 // ─── Generate combo ───────────────────────────────────────────────────────────
-// Assignment strategy:
-//   1. Build and sanitize the harmony pool (no color with penalty >= 2 survives).
-//   2. Score every (garment, color) pair by individual fit penalty.
-//   3. Sort auto-garments by descending visual weight: heaviest garments get
-//      the best-fitting color first.
-//   4. After individual assignment, check pairwise combo fits for the top-down
-//      sequence and swap offending colors (penalty >= 2) with their nearest
-//      acceptable neighbor from the pool.
-function generateCombo(type, profile, fixedMap, excludedIds, seed) {
+// Sequential assignment: heaviest garment first.
+// For each garment: pick best pool color, evaluate in context of already-assigned,
+// apply correctColor if season|combo flag >= 2.
+function generateCombo(type, profile, fixedMap, excludedIds, seed, seasonKey) {
   const rand = seededRand(seed);
 
-  // GARMENTS is ordered top-down; filter respects that order
   const presentGarments = GARMENTS.filter(g => !excludedIds.includes(g.id));
   const presentIds = presentGarments.map(g => g.id);
   const garmentWeights = computeGarmentWeights(presentIds);
 
   const fixedEntries = Object.entries(fixedMap).filter(([id]) => !excludedIds.includes(id));
 
-  // Anchor hue: bias toward fixed colors when present
-  let anchorH;
-  if (fixedEntries.length > 0) {
-    const weightedHues = fixedEntries.flatMap(([id, entry]) => {
-      const gw = (garmentWeights[id] || 10) / 100;
-      return garmentWeightedHues(entry).map(({ h, w }) => ({ h, w: w * gw }));
-    });
-    anchorH = avgHue(weightedHues);
-  } else {
-    anchorH = profile.anchorH;
-  }
+  const anchorH = resolveAnchorH(fixedEntries, garmentWeights, seasonKey, rand);
+  const jitter = (rand() - 0.5) * 20; // ±10°
 
-  const jitter = (rand() - 0.5) * 36;
   let effectiveType = type;
   for (const [, entry] of fixedEntries) {
     if ((normalizeEntry(entry).pattern || "solid") !== "solid") { effectiveType = "mono"; break; }
   }
 
-  const poolProfile = { anchorH, undertone: profile.undertone, depth: profile.depth, intensity: profile.intensity };
-  const rawPool = buildHarmonyPoolV2(effectiveType, poolProfile, jitter);
+  const poolProfile = {
+    anchorH: ((anchorH + jitter) % 360 + 360) % 360,
+    undertone: profile.undertone,
+    depth: profile.depth,
+    intensity: profile.intensity,
+  };
+  const pool = buildHarmonyPoolV2(effectiveType, poolProfile, 0);
 
-  // Step 1: sanitize — replace palette colors with penalty >= 2 with neutralized variants
-  const pool = sanitizePool(rawPool, profile);
-
-  // Shuffle pool for variety across regenerations (seeded so same seed = same result)
   const shuffledPool = [...pool];
   for (let i = shuffledPool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [shuffledPool[i], shuffledPool[j]] = [shuffledPool[j], shuffledPool[i]];
   }
 
-  // Separate auto-garments (need color assignment) from fixed ones
-  const autoGarments = presentGarments.filter(g => !fixedMap[g.id]);
+  // Assignment order: descending visual weight
+  const assignmentOrder = [...presentGarments].sort(
+    (a, b) => (garmentWeights[b.id] || 0) - (garmentWeights[a.id] || 0)
+  );
 
-  // Step 2: score each auto-garment against each pool color (penalty = individual fit)
-  // Build a score matrix: scores[gi][pi] = penalty for garment gi using pool color pi
-  const scores = autoGarments.map(g => {
-    const weight = garmentWeights[g.id] || 5;
-    return shuffledPool.map(hex => evaluateColorFit(hex, profile, [], "normal", weight));
-  });
-
-  // Step 3: greedy assignment — sort garments by descending weight, assign best available color
-  const assignOrder = autoGarments
-    .map((g, gi) => ({ gi, weight: garmentWeights[g.id] || 5 }))
-    .sort((a, b) => b.weight - a.weight);
-
-  const assigned = new Array(autoGarments.length).fill(null); // assigned[gi] = pool index
+  const assignedMap = {};
   const usedPoolIdx = new Set();
 
-  for (const { gi } of assignOrder) {
-    // Find pool color with lowest penalty for this garment, preferring unused ones
-    let bestPi = -1, bestScore = Infinity, bestUsed = true;
-    for (let pi = 0; pi < shuffledPool.length; pi++) {
-      const s = scores[gi][pi];
-      const used = usedPoolIdx.has(pi);
-      // Prefer unused colors; among same preference, prefer lower penalty
-      if (bestPi === -1 || (!used && bestUsed) || (used === bestUsed && s < bestScore)) {
-        bestPi = pi; bestScore = s; bestUsed = used;
-      }
-    }
-    assigned[gi] = bestPi;
-    usedPoolIdx.add(bestPi);
-  }
-
-  // Step 4: pairwise combo fix — iterate top-down sequence, fix combo penalty >= 2
-  // Build the full item list (in GARMENTS top-down order) for pairwise checks
-  const itemHexes = presentGarments.map(g => {
-    if (fixedMap[g.id]) return normalizeEntry(fixedMap[g.id]).hex;
-    const gi = autoGarments.findIndex(ag => ag.id === g.id);
-    return shuffledPool[assigned[gi]];
-  });
-
-  // For each adjacent pair top-down, fix the lighter-weight garment if combo penalty >= 2
-  for (let i = 0; i < presentGarments.length - 1; i++) {
-    for (let j = i + 1; j < presentGarments.length; j++) {
-      const gA = presentGarments[i], gB = presentGarments[j];
-      if (fixedMap[gA.id] && fixedMap[gB.id]) continue; // both fixed: nothing to do
-      const pairPenalty = evaluateComboFits([
-        { hex: itemHexes[i], weight: garmentWeights[gA.id] || 5 },
-        { hex: itemHexes[j], weight: garmentWeights[gB.id] || 5 },
-      ]);
-      // pairPenalty[0] = penalty on A, pairPenalty[1] = penalty on B
-      const loserLocal = pairPenalty[0] >= pairPenalty[1] ? 0 : 1;
-      const loserGIdx = loserLocal === 0 ? i : j;
-      const loserG = presentGarments[loserGIdx];
-      if (fixedMap[loserG.id]) continue; // can't change fixed
-      const maxPenalty = Math.max(...pairPenalty);
-      if (maxPenalty < 2) continue;
-
-      // Try to find a better pool color for the loser garment
-      const loserAi = autoGarments.findIndex(ag => ag.id === loserG.id);
-      const loserWeight = garmentWeights[loserG.id] || 5;
-      let bestAlt = assigned[loserAi], bestAltScore = Infinity;
-      for (let pi = 0; pi < shuffledPool.length; pi++) {
-        if (pi === assigned[loserAi]) continue;
-        // Score = individual fit + pairwise fit with the other garment in the pair
-        const partnerIdx = loserLocal === 0 ? j : i;
-        const individualFit = evaluateColorFit(shuffledPool[pi], profile, [], "normal", loserWeight);
-        const newPair = evaluateComboFits([
-          { hex: loserLocal === 0 ? shuffledPool[pi] : itemHexes[partnerIdx], weight: garmentWeights[presentGarments[partnerIdx].id] || 5 },
-          { hex: loserLocal === 0 ? itemHexes[partnerIdx] : shuffledPool[pi], weight: loserWeight },
-        ]);
-        const altScore = individualFit + Math.max(...newPair);
-        if (altScore < bestAltScore) { bestAlt = pi; bestAltScore = altScore; }
-      }
-      if (bestAlt !== assigned[loserAi]) {
-        assigned[loserAi] = bestAlt;
-        itemHexes[loserGIdx] = shuffledPool[bestAlt];
-      }
-    }
-  }
-
-  // Assemble final items in top-down GARMENTS order
-  return presentGarments.map((g, idx) => {
+  for (const g of assignmentOrder) {
     const weight = garmentWeights[g.id] || 5;
+
     if (fixedMap[g.id]) {
       const e = normalizeEntry(fixedMap[g.id]);
-      // Fixed colors: original hex for picker, normalized for outfit display
       const hexDisplay = normHex(e.hex, normFabric);
-      return { id: g.id, ...e, fixed: true, name: colorName(hexDisplay), weight, hexDisplay };
+      assignedMap[g.id] = {
+        id: g.id, hex: e.hex, hexDisplay, secondaries: e.secondaries, pattern: e.pattern,
+        name: colorName(hexDisplay), fixed: true, weight, material: e.material,
+      };
+      continue;
     }
-    const hex = itemHexes[idx];
-    // Auto colors: already generated in fabric-plausible space; normFabric refines further
-    const hexDisplay = normHex(hex, normFabric);
-    return { id: g.id, hex, hexDisplay, name: colorName(hexDisplay), fixed: false, weight, material: "normal" };
-  });
+
+    // Assigned items so far, sorted heaviest first for consistent combo ordering
+    const assignedItems = Object.values(assignedMap).sort((a, b) => b.weight - a.weight);
+    const assignedHexes = assignedItems.flatMap(it => [it.hex, ...secondaryHexes(it)]);
+
+    // Pick pool color with lowest season penalty (prefer unused)
+    let bestHex = null, bestScore = Infinity, bestUsed = true, bestPi = -1;
+    for (let pi = 0; pi < shuffledPool.length; pi++) {
+      const hex = shuffledPool[pi];
+      const used = usedPoolIdx.has(pi);
+      const score = evaluateColorFit(hex, profile, assignedHexes, "normal", weight);
+      if (bestHex === null || (!used && bestUsed) || (used === bestUsed && score < bestScore)) {
+        bestHex = hex; bestScore = score; bestUsed = used; bestPi = pi;
+      }
+    }
+    usedPoolIdx.add(bestPi);
+
+    const { season: sLevel, combo: cLevel } = evaluateInContext(bestHex, "normal", weight, profile, assignedItems);
+    const finalHex = (sLevel >= 2 || cLevel >= 2)
+      ? correctColor(bestHex, "normal", weight, profile, assignedItems)
+      : bestHex;
+
+    const hexDisplay = normHex(finalHex, normFabric);
+    assignedMap[g.id] = {
+      id: g.id, hex: finalHex, hexDisplay, secondaries: [], pattern: "solid",
+      name: colorName(hexDisplay), fixed: false, weight, material: "normal",
+    };
+  }
+
+  // Restore top-down GARMENTS order for display
+  return presentGarments.map(g => assignedMap[g.id]);
 }
 
 // ─── Color naming ─────────────────────────────────────────────────────────────
@@ -1244,9 +1294,10 @@ export default function App() {
   const generate = useCallback(() => {
     const bioAnchor = extractAnchorFromBiology(skinColor, eyeColor, hairColor);
     const baseSeed = (refreshKey + 1) * 99991 + Date.now() % 9973;
+    const seasonKey = `${season.base}-${season.sub}`;
     setCombos(HARMONIES.map((h, i) => ({
       type: h.id,
-      items: generateCombo(h.id, bioAnchor, fixedMap, excludedIds, baseSeed + i * 7),
+      items: generateCombo(h.id, bioAnchor, fixedMap, excludedIds, baseSeed + i * 7, seasonKey),
     })));
   // FIX #9: all deps are stable primitives or memoized objects — no JSON.stringify
   }, [skinColor, eyeColor, hairColor, reflexes, fixedMap, excludedIds, season.base, season.sub, refreshKey]);
