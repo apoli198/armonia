@@ -58,6 +58,16 @@ La correttezza del motore prevale sulla rifinitura visiva.
 - Non inserire segreti o identificativi di provider nel codice client.
 - Il provider pubblicitario deve essere isolato dietro un adapter o componente dedicato.
 
+## Modalità operativa con GitHub
+
+- Usare GitHub e i relativi connettori esclusivamente per operazioni di lettura e verifica.
+- Non creare o modificare branch, file, commit, issue, pull request, commenti, label o altre risorse remote.
+- Non eseguire autonomamente `git commit`, `git push`, merge o apertura di pull request.
+- Le modifiche al repository locale devono essere descritte passo passo affinché il proprietario possa applicarle, verificarle e comprenderle.
+- Prima di ogni modifica indicare obiettivo, file coinvolti, comandi da eseguire, risultato atteso e controlli successivi.
+- Analizzare gli output reali forniti dal proprietario prima di considerare riuscita un’installazione, un type-check, una build o un test.
+- GitHub rimane la fonte primaria per leggere lo stato aggiornato del branch `main`; la working copy locale del proprietario è l’ambiente in cui applicare e verificare le modifiche.
+
 ## TypeScript
 
 - Evitare `any` salvo confine esterno non tipizzabile e motivato.
