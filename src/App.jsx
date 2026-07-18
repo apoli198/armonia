@@ -38,15 +38,6 @@ function contrastColor(hex) {
 }
 
 // ─── Screen → Real-world normalization ────────────────────────────────────────
-// sRGB screens overstate both saturation (wider gamut than any fabric) and
-// lightness at the extremes (backlit whites, crushed blacks). These functions
-// map screen HSL values to the physical HSL space of the corresponding material.
-//
-// S curve: power law  s' = (s/100)^gamma * maxS
-//   gamma > 1 compresses mids more than ends (perceptually correct for sRGB).
-// L curve: sigmoid rescaled to [lMin, lMax]
-//   sig(x) = 1/(1+exp(-k*(x-0.5))), normalized to [0,1] so endpoints map to lMin/lMax.
-
 function _sigL(l, lMin, lMax, k = 4.5) {
   const x = l / 100;
   const sig  = 1 / (1 + Math.exp(-k * (x - 0.5)));
@@ -59,38 +50,29 @@ function _powS(s, gamma, maxS) {
   return Math.pow(Math.max(0, s) / 100, gamma) * maxS;
 }
 
-// Fabric (output colors): opaque textiles, matte/semi-matte finish
-//   S max ≈ 68 (vivid red wool); L range [5, 90] (velvet black → optical white cotton)
 function normFabric(h, s, l) {
   return [h, _powS(s, 1.4, 68), _sigL(l, 5, 90)];
 }
 
-// Skin: diffuse biological surface, low saturation, mid-high lightness range
-//   S max ≈ 38; L range [20, 88]
 function normBioSkin(h, s, l) {
   return [h, _powS(s, 1.2, 38), _sigL(l, 20, 88, 3.5)];
 }
 
-// Eyes: wet iridescent surface — saturates more on screen than in person
-//   S max ≈ 72; L range [15, 72]
 function normBioEyes(h, s, l) {
   return [h, _powS(s, 1.6, 72), _sigL(l, 15, 72, 4.0)];
 }
 
-// Hair: keratin, highly absorbing — very dark hair appears L≈0 on screen, real is L≈5-8
-//   S max ≈ 55; L range [5, 82]
 function normBioHair(h, s, l) {
   return [h, _powS(s, 1.3, 55), _sigL(l, 5, 82, 5.0)];
 }
 
-// Convenience: normalize a hex through a given bio norm function, return hex
 function normHex(hex, normFn) {
   const [h, s, l] = hexToHsl(hex);
   const [hn, sn, ln] = normFn(h, s, l);
   return hslToHex(hn, sn, ln);
 }
 
-// ─── Bio-plausible HSL ranges (post-normalization space) ─────────────────────
+// ─── Bio-plausible HSL ranges ─────────────────────────────────────────────────
 const BIO_RANGES = {
   skin: { h: { min: 0, max: 70 }, l: { min: 20, max: 88 }, s: { min: 2, max: 38 } },
   hair: { h: { min: 0, max: 90 }, l: { min: 5,  max: 82 }, s: { min: 5, max: 55 } },
@@ -108,20 +90,17 @@ function validateBioColor(hex, component, normFn) {
 }
 
 // ─── Garment weights ──────────────────────────────────────────────────────────
-// cappello has high visual impact when present (top of body, near face)
 const GARMENT_BASE_WEIGHTS = { cappello: 30, giubbotto: 32, pantalone: 30, felpa: 28, maglia: 25, scarpe: 12, cintura: 5, calzini: 4 };
 
 function computeGarmentWeights(presentIds) {
   const w = {};
   for (const id of presentIds) w[id] = GARMENT_BASE_WEIGHTS[id] || 8;
-  // Layer occlusion: outer garments reduce visual weight of inner ones
   if (presentIds.includes("giubbotto")) {
-    if (w.felpa   !== undefined) w.felpa   *= 0.35;
-    if (w.maglia  !== undefined) w.maglia  *= 0.12;
+    if (w.felpa  !== undefined) w.felpa  *= 0.35;
+    if (w.maglia !== undefined) w.maglia *= 0.12;
   } else if (presentIds.includes("felpa")) {
-    if (w.maglia  !== undefined) w.maglia  *= 0.30;
+    if (w.maglia !== undefined) w.maglia *= 0.30;
   }
-  // cappello near face competes with giubbotto for dominance — reduce slightly when both present
   if (presentIds.includes("cappello") && presentIds.includes("giubbotto")) {
     w.cappello *= 0.75;
   }
@@ -132,7 +111,6 @@ function computeGarmentWeights(presentIds) {
 }
 
 function classifyContrastLevel(skin, hair) {
-  // Use normalized L values so screen-brightness artifacts don't skew contrast classification
   const [,, lSkinN] = normBioSkin(...hexToHsl(skin));
   const [,, lHairN] = normBioHair(...hexToHsl(hair));
   const deltaL = Math.abs(lSkinN - lHairN);
@@ -162,22 +140,16 @@ const SEASONS = {
 };
 
 // ─── Color fit evaluation ─────────────────────────────────────────────────────
-// All inputs are screen-space hex; normalization to fabric-space is applied internally.
-// Thresholds are calibrated in fabric-space (post normFabric).
-
 function evaluateNeutralFit(fL, comboFabricHSL) {
-  // In fabric-space: black ≈ L<12, white ≈ L>82
   const isNearBlack = fL < 12;
   const isNearWhite = fL > 82;
   if (isNearBlack) {
-    // Black clashes only with very dark chromatic colors (hard to tell apart)
     const darkChromatic = comboFabricHSL.filter(([, cs, cl]) => cl < 22 && cs > 18);
-    return darkChromatic.length > 0 ? 1 : 0; // level 1 max — black is very versatile
+    return darkChromatic.length > 0 ? 1 : 0;
   }
   if (isNearWhite) {
-    // White clashes only with extremely saturated colors (jarring optical contrast)
     const veryHighSat = comboFabricHSL.filter(([, cs]) => cs > 52);
-    return veryHighSat.length > 0 ? 1 : 0; // level 1 max — white is very versatile
+    return veryHighSat.length > 0 ? 1 : 0;
   }
   return 0;
 }
@@ -187,7 +159,6 @@ function evaluateColorFit(hex, profile, comboHexes = [], material = "normal", we
   const [, fS, fL] = normFabric(h, s, l);
 
   if (material === "jeans") {
-    // Jeans: only penalize when all other dark neutrals are already present
     const darkNeutrals = comboHexes.filter(c => {
       const [, fSc, fLc] = normFabric(...hexToHsl(c));
       return fLc < 18 && fSc < 12;
@@ -197,31 +168,22 @@ function evaluateColorFit(hex, profile, comboHexes = [], material = "normal", we
 
   const wf = weight > 25 ? 1.0 : weight > 10 ? 0.75 : 0.5;
 
-  // Achromatic: delegate to neutral evaluator
   if (fS < 6) {
     const comboFabricHSL = comboHexes.map(c => normFabric(...hexToHsl(c)));
-    const level = evaluateNeutralFit(fL, comboFabricHSL);
-    return Math.round(level * wf);
+    return Math.round(evaluateNeutralFit(fL, comboFabricHSL) * wf);
   }
 
   let penalty = 0;
-
-  // Undertone mismatch — only fires for meaningfully saturated colors (fS > 30)
   if (fS > 30) {
     const isWarmHue = h < 70 || h > 310;
     const isCoolHue = h > 165 && h < 280;
     if (profile.undertone === "warm" && isCoolHue && fS > 36) penalty += 1;
     if (profile.undertone === "cool" && isWarmHue && fS > 36) penalty += 1;
-    // neutral undertone: no penalty
   }
-
-  // Depth mismatch — in fabric-space thresholds
   if (profile.depth === "deep") { if (fL > 72) penalty += 1; }
   else                          { if (fL < 18) penalty += 1; }
-
-  // Intensity mismatch — fabric-space thresholds
-  if (profile.intensity === "high")  { if (fS < 22) penalty += 1; }
-  else if (profile.intensity === "low") { if (fS > 50) penalty += 1; }
+  if (profile.intensity === "high")      { if (fS < 22) penalty += 1; }
+  else if (profile.intensity === "low")  { if (fS > 50) penalty += 1; }
 
   const rawLevel = penalty === 0 ? 0 : penalty <= 1 ? 1 : penalty <= 2 ? 2 : 3;
   return Math.round(rawLevel * wf);
@@ -233,32 +195,28 @@ function evaluateComboFits(items) {
     for (let j = i + 1; j < items.length; j++) {
       const a = items[i], b = items[j];
       const [hA, sA, lA] = hexToHsl(a.hex), [hB, sB, lB] = hexToHsl(b.hex);
-      // All pairwise checks in fabric-space
       const [, fA, flA] = normFabric(hA, sA, lA);
       const [, fB, flB] = normFabric(hB, sB, lB);
       let problem = 0;
 
-      // Two near-identical dark neutrals — hard to distinguish in real lighting
       if (flA < 22 && flB < 22 && fA < 14 && fB < 14) {
         const deltaL = Math.abs(flA - flB);
-        if (deltaL < 8)  problem = Math.max(problem, 3);
+        if (deltaL < 8)       problem = Math.max(problem, 3);
         else if (deltaL < 16) problem = Math.max(problem, 2);
       }
 
-      // Same hue family but very different fabric saturations — clashing intensity
       const hueDiff = Math.min(Math.abs(hA - hB), 360 - Math.abs(hA - hB));
       if (hueDiff < 20 && fA > 14 && fB > 14 && Math.abs(fA - fB) > 16) problem = Math.max(problem, 2);
 
-      // Warm-cool chromatic clash
       const aWarm = (hA < 70 || hA > 310) && fA > 24;
       const aCool = (hA > 165 && hA < 280) && fA > 24;
       const bWarm = (hB < 70 || hB > 310) && fB > 24;
       const bCool = (hB > 165 && hB < 280) && fB > 24;
       if ((aWarm && bCool) || (aCool && bWarm)) {
         const minF = Math.min(fA, fB);
-        if (minF > 42) problem = Math.max(problem, 3);
-        else if (minF > 28) problem = Math.max(problem, 2);
-        else problem = Math.max(problem, 1);
+        if (minF > 42)       problem = Math.max(problem, 3);
+        else if (minF > 28)  problem = Math.max(problem, 2);
+        else                 problem = Math.max(problem, 1);
       }
 
       if (problem > 0) {
@@ -309,14 +267,17 @@ function extractAnchorFromBiology(skin, eyes, hair) {
   const [hSkN,, lSkN] = normBioSkin(...hexToHsl(skin));
   const [hEyN]        = normBioEyes(...hexToHsl(eyes));
   const [hHrN,, lHrN] = normBioHair(...hexToHsl(hair));
-  const anchorH = avgHue([{ h: hSkN, w: 0.60 }, { h: hHrN, w: 0.30 }, { h: hEyN, w: 0.10 }]);
-  const profile = analyzeProfile(skin, eyes, hair, null);
+  const anchorH = avgHue([{ h: hSkN, w: 0.50 }, { h: hHrN, w: 0.40 }, { h: hEyN, w: 0.10 }]);
+  const profile = analyzeProfile(skin, eyes, hair, { skin: "neutral", eye: "neutral", hair: "neutral", hairVolume: "medium" });
   return {
     anchorH,
     contrastLevel: classifyContrastLevel(skin, hair),
     undertone: profile.undertone,
     depth: profile.depth,
     intensity: profile.intensity,
+    utScore: profile.utScore,
+    depthScore: profile.depthScore,
+    intScore: profile.intScore,
     deltaL: Math.abs(lSkN - lHrN),
   };
 }
@@ -324,99 +285,127 @@ function extractAnchorFromBiology(skin, eyes, hair) {
 // ─── Options ──────────────────────────────────────────────────────────────────
 const UNDERTONE_OPTIONS = [
   { id: "warm",    label: "Caldo",  color: "#E8B86D" },
-  { id: "cool",    label: "Freddo", color: "#B0C4DE" },
   { id: "neutral", label: "Neutro", color: "#C8B89A" },
+  { id: "cool",    label: "Freddo", color: "#B0C4DE" },
 ];
 const EYE_REFLEXES = [
-  { id: "golden", label: "Nocciola/Dorati", color: "#A0742A" },
-  { id: "green",  label: "Verdi",           color: "#5A8A50" },
-  { id: "grey",   label: "Grigi/Azzurri",   color: "#7890A8" },
+  { id: "golden",  label: "Nocciola/Dorati", color: "#A0742A" },
+  { id: "green",   label: "Verdi",           color: "#5A8A50" },
+  { id: "grey",    label: "Grigi/Azzurri",   color: "#7890A8" },
+  { id: "neutral", label: "Neutri",          color: "#8A8A8A" },
 ];
 const HAIR_REFLEXES = [
-  { id: "copper", label: "Ramati/Rossi",   color: "#B85030" },
-  { id: "golden", label: "Dorati",         color: "#C0902A" },
-  { id: "ashy",   label: "Cenere/Freddi",  color: "#8090A0" },
+  { id: "copper",  label: "Ramati/Rossi",  color: "#B85030" },
+  { id: "golden",  label: "Dorati",        color: "#C0902A" },
+  { id: "ashy",    label: "Cenere/Freddi", color: "#8090A0" },
+  { id: "neutral", label: "Neutri",        color: "#8A8A8A" },
+];
+const HAIR_VOLUME_OPTIONS = [
+  { id: "shaved", label: "Rasato" },
+  { id: "low",    label: "Corto"  },
+  { id: "medium", label: "Medio"  },
+  { id: "high",   label: "Lungo"  },
 ];
 
 // ─── Profile analysis ─────────────────────────────────────────────────────────
+// Undertone pipeline:
+//   1. Biological signals combined with dynamic hair weight (reflectivity × volume)
+//   2. Reflex pickers applied with reflexScale — effect is strongest near classification
+//      thresholds (|utScore - threshold| small) and attenuated when score is far from them.
+//      This prevents pickers from overriding a strongly-classified profile while still
+//      resolving borderline cases.
+//
+// Intensity pipeline:
+//   Reflex pickers are the primary signal (0..1 scale), normalized S values are fallback
+//   when picker is "neutral". This replaces the previous additive delta approach.
+//
+// Depth: unchanged — L of skin/hair/eyes only, no picker.
+
 function analyzeProfile(skin, eyes, hair, reflexes) {
-  // Normalize each biological input to its physical color space
   const [hSk, sSk, lSk] = normBioSkin(...hexToHsl(skin));
   const [hEy, sEy, lEy] = normBioEyes(...hexToHsl(eyes));
   const [hHr, sHr, lHr] = normBioHair(...hexToHsl(hair));
 
-  const skinHueValid = sSk > 3;
-  let utScore = skinHueValid ? (hSk - 22) / 22 : 0;
-  utScore = Math.max(-1.5, Math.min(1.5, utScore));
+  // ── Hair signal weight: reflectivity × volume ──────────────────────────────
+  // reflectivity peaks at L≈41 (midpoint of [5,82]), zero at L=5 or L=82, zero at S=0
+  const hairReflectivity = sHr * Math.sin(Math.max(0, lHr - 5) / 77 * Math.PI); // 0..55*1=55
+  const hairReflNorm = hairReflectivity / 55; // 0..1
+  const VOLUME_MULT = { shaved: 0.10, low: 0.40, medium: 0.75, high: 1.00 };
+  const volMult = VOLUME_MULT[reflexes?.hairVolume] ?? 0.75;
+  const hairSignalWeight = hairReflNorm * volMult; // 0..1, scales the 0.50 hair slot
 
-  let eyeUt = 0;
-  if (sEy > 12) {
-    if (hEy > 75 && hEy < 170)       eyeUt = -0.15;
-    else if (hEy > 170 && hEy < 250) eyeUt = -0.25;
-    else if (hEy < 45 || hEy > 320)  eyeUt = +0.18;
-  } else {
-    eyeUt = lEy < 20 ? 0 : -0.12;
-  }
+  // Biological undertone scores (each roughly -1..+1, warm positive)
+  const skinHueValid = sSk > 3;
+  let skinUt = skinHueValid ? Math.max(-1.5, Math.min(1.5, (hSk - 22) / 22)) : 0;
 
   let hairUt = 0;
   if (lHr > 12 && sHr > 5) {
-    hairUt = (hHr - 30) / 40;
-    hairUt = Math.max(-1, Math.min(1, hairUt)) * 0.3;
+    hairUt = Math.max(-1, Math.min(1, (hHr - 30) / 40));
   }
 
-  utScore = utScore * 0.60 + eyeUt * 0.25 + hairUt * 0.15;
+  let eyeUt = 0;
+  if (sEy > 12) {
+    if      (hEy > 75  && hEy < 170) eyeUt = -0.20;
+    else if (hEy > 170 && hEy < 250) eyeUt = -0.35;
+    else if (hEy < 45  || hEy > 320) eyeUt = +0.25;
+  } else {
+    eyeUt = lEy < 20 ? 0 : -0.15;
+  }
 
-  const RUT = {
-    skin: { warm: +0.45, cool: -0.45, neutral: 0 },
-    eye:  { golden: +0.18, green: -0.08, grey: -0.20 },
-    hair: { copper: +0.25, golden: +0.15, ashy: -0.20 },
-  };
-  if (reflexes?.skin && RUT.skin[reflexes.skin] !== undefined) utScore += RUT.skin[reflexes.skin];
-  if (reflexes?.eye  && RUT.eye [reflexes.eye ] !== undefined) utScore += RUT.eye [reflexes.eye];
-  if (reflexes?.hair && RUT.hair[reflexes.hair] !== undefined) utScore += RUT.hair[reflexes.hair];
+  // Dynamic weights: hair weight scales with signal strength, skin fills the gap
+  const hairW = hairSignalWeight * 0.50;
+  const skinW = 0.50 - hairW * 0.30; // skin gives up some weight as hair gains
+  const eyeW  = 0.15;
+  const total = hairW + skinW + eyeW;
+  let utScore = (skinUt * skinW + hairUt * hairW + eyeUt * eyeW) / total;
 
-  const undertone = utScore > 0.12 ? "warm" : utScore < -0.18 ? "cool" : "neutral";
+  // Reflex pickers: apply with scale proportional to proximity to nearest threshold
+  // Thresholds: warm > 0.12, cool < -0.18, neutral in between
+  const WARM_T = 0.12, COOL_T = -0.18;
+  const distToThreshold = Math.min(Math.abs(utScore - WARM_T), Math.abs(utScore - COOL_T));
+  const reflexScale = Math.max(0.15, 1 - distToThreshold / 0.5);
 
+  const RUT = { skin: { warm: +0.50, cool: -0.50, neutral: 0 },
+                eye:  { golden: +0.15, green: -0.08, grey: -0.18, neutral: 0 },
+                hair: { copper: +0.28, golden: +0.18, ashy: -0.22, neutral: 0 } };
+  // Hair reflex also modulated by volume (low volume → less impact)
+  const hairReflexMult = volMult;
+  if (reflexes?.skin) utScore += (RUT.skin[reflexes.skin] ?? 0) * reflexScale;
+  if (reflexes?.eye)  utScore += (RUT.eye [reflexes.eye ] ?? 0) * reflexScale;
+  if (reflexes?.hair) utScore += (RUT.hair[reflexes.hair] ?? 0) * reflexScale * hairReflexMult;
+
+  const undertone = utScore > WARM_T ? "warm" : utScore < COOL_T ? "cool" : "neutral";
+
+  // ── Depth ──────────────────────────────────────────────────────────────────
   const depthScore = 100 - (lSk * 0.55 + lHr * 0.35 + lEy * 0.10);
   const depth = depthScore > 48 ? "deep" : "light";
 
-  let intScore = (sSk * 0.20 + sEy * 0.45 + sHr * 0.20) * 0.7 + Math.abs(lSk - lHr) * 0.3;
+  // ── Intensity ──────────────────────────────────────────────────────────────
+  // Eye picker is primary (0..1), hair picker secondary, skin S as tertiary fallback.
+  // "neutral" picker → use normalized S value of that component as fallback signal.
+  const eyeSNorm  = sEy / 72;  // normBioEyes maxS=72
+  const hairSNorm = sHr / 55;  // normBioHair maxS=55
+  const skinSNorm = sSk / 38;  // normBioSkin maxS=38
 
-  const RINT = { eye: { golden: +10, green: +8, grey: -8 }, hair: { copper: +12, golden: +6, ashy: -8 } };
-  if (reflexes?.eye  && RINT.eye [reflexes.eye ] !== undefined) intScore += RINT.eye [reflexes.eye];
-  if (reflexes?.hair && RINT.hair[reflexes.hair] !== undefined) intScore += RINT.hair[reflexes.hair];
+  const EYE_INT  = { golden: 0.78, green: 0.62, grey: 0.28, neutral: eyeSNorm  };
+  const HAIR_INT = { copper: 0.88, golden: 0.65, ashy: 0.28, neutral: hairSNorm };
 
-  const intensity = intScore > 32 ? "high" : intScore < 16 ? "low" : "medium";
+  const eyeIntVal  = EYE_INT [reflexes?.eye  ?? "neutral"] ?? eyeSNorm;
+  const hairIntVal = HAIR_INT[reflexes?.hair ?? "neutral"] ?? hairSNorm;
+
+  // Contrast bonus: high skin/hair ΔL → higher intensity (normalized to 0..1)
+  const contrastBonus = Math.abs(lSk - lHr) / 82;
+
+  let intScore = eyeIntVal * 0.50 + hairIntVal * 0.30 + skinSNorm * 0.20 + contrastBonus * 0.15;
+  // Normalize to roughly 0..100 for threshold compatibility
+  intScore *= 100;
+
+  const intensity = intScore > 55 ? "high" : intScore < 30 ? "low" : "medium";
 
   return { undertone, depth, intensity, utScore, depthScore, intScore };
 }
 
 // ─── Season detection ─────────────────────────────────────────────────────────
-function detectSeasonFromProfile(undertone, depth, intensity) {
-  const key = `${undertone}-${depth}-${intensity}`;
-  const mapping = {
-    "warm-light-low":     "spring-light",
-    "warm-light-medium":  "spring-true",
-    "warm-light-high":    "spring-warm",
-    "warm-deep-low":      "autumn-true",
-    "warm-deep-medium":   "autumn-warm",
-    "warm-deep-high":     "autumn-deep",
-    "cool-light-low":     "summer-soft",
-    "cool-light-medium":  "summer-light",
-    "cool-light-high":    "summer-true",
-    "cool-deep-low":      "winter-cool",
-    "cool-deep-medium":   "winter-true",
-    "cool-deep-high":     "winter-bright",
-    "neutral-light-low":    "summer-soft",
-    "neutral-light-medium": "spring-true",
-    "neutral-light-high":   "summer-true",
-    "neutral-deep-low":     "autumn-true",
-    "neutral-deep-medium":  "winter-true",
-    "neutral-deep-high":    "winter-bright",
-  };
-  return SEASONS[mapping[key]] || SEASONS["spring-true"];
-}
-
 function detectSeason(skin, eyes, hair, reflexes) {
   const p = analyzeProfile(skin, eyes, hair, reflexes);
   const { undertone, depth, intensity } = p;
@@ -431,7 +420,6 @@ function detectSeason(skin, eyes, hair, reflexes) {
   } else if (undertone === "cool" && depth === "deep") {
     base = "winter"; sub = intensity === "low" ? "cool" : intensity === "high" ? "bright" : "true";
   } else {
-    // neutral undertone
     base = depth === "light" ? "summer" : "winter";
     sub  = intensity === "low" ? (depth === "light" ? "soft" : "cool") : intensity === "high" ? (depth === "light" ? "true" : "bright") : "true";
   }
@@ -500,8 +488,6 @@ function garmentWeightedHues(entry) {
 }
 
 // ─── Season anchor color sets ─────────────────────────────────────────────────
-// 6 hues per season in fabric-space [H, S, L].
-// Used as candidate anchors when no fixed garment is present (Case 2).
 const SEASON_ANCHORS = {
   "spring-true":   [[28,52,62],[72,46,58],[12,48,55],[155,38,52],[195,34,58],[48,42,65]],
   "spring-light":  [[32,38,72],[18,32,68],[85,28,70],[175,24,68],[210,22,72],[55,30,74]],
@@ -524,18 +510,13 @@ const SEASON_ANCHORS = {
 };
 
 // ─── Anchor resolution ────────────────────────────────────────────────────────
-// Case 1: fixed garments present → hue of dominant (heaviest) fixed garment,
-//         secondaries and other fixed garments contribute as minor weights (Plan B).
-// Case 2: no fixed garments → sample randomly from season anchor set.
 function resolveAnchorH(fixedEntries, garmentWeights, seasonKey, rand) {
   if (fixedEntries.length > 0) {
     const [domId, domEntry] = fixedEntries.reduce((best, cur) =>
       (garmentWeights[cur[0]] || 0) > (garmentWeights[best[0]] || 0) ? cur : best
     );
     const domWeight = garmentWeights[domId] || 10;
-    const weightedHues = garmentWeightedHues(domEntry).map(({ h, w }) => ({
-      h, w: w * (domWeight / 100),
-    }));
+    const weightedHues = garmentWeightedHues(domEntry).map(({ h, w }) => ({ h, w: w * (domWeight / 100) }));
     for (const [id, entry] of fixedEntries) {
       if (id === domId) continue;
       const gw = (garmentWeights[id] || 5) / 100;
@@ -553,8 +534,6 @@ function secondaryHexes(entry) {
 }
 
 // ─── In-context evaluation ────────────────────────────────────────────────────
-// Evaluates a candidate hex against already-assigned (heavier) garments.
-// Combo flag considers assigned items + their secondaries.
 function evaluateInContext(hex, material, weight, profile, assignedItems) {
   const assignedHexes = assignedItems.flatMap(it => [it.hex, ...secondaryHexes(it)]);
   const seasonLevel = evaluateColorFit(hex, profile, assignedHexes, material, weight);
@@ -567,10 +546,9 @@ function evaluateInContext(hex, material, weight, profile, assignedItems) {
 }
 
 // ─── Targeted correction ──────────────────────────────────────────────────────
-// Nudges H/S/L along 4 axes (undertone → depth → intensity → contrast)
-// until flags drop below 2 or budget (12 steps) is exhausted.
-// Step sizes: ΔH=5°, ΔL=6, ΔS=8. Max 3 steps per axis.
-// Fallback: contextual neutral (black/grey/white).
+// 4 axes: undertone → depth → intensity → contrast. 3 steps per axis (12 total).
+// Uses continuous profile scores for calibrated targets.
+// Fallback: contextual neutral.
 const _STEP_H = 5, _STEP_L = 6, _STEP_S = 8, _STEPS_PER_AXIS = 3;
 
 function correctColor(hex, material, weight, profile, assignedItems) {
@@ -582,7 +560,7 @@ function correctColor(hex, material, weight, profile, assignedItems) {
     return { ok: season < 2 && combo < 2, hex: c };
   };
 
-  // Undertone: shift H toward warm or cool pole for chromatic colors
+  // Undertone: shift H toward warm or cool pole
   for (let k = 0; k < _STEPS_PER_AXIS; k++) {
     const { ok, hex: c } = check();
     if (ok) return c;
@@ -593,23 +571,23 @@ function correctColor(hex, material, weight, profile, assignedItems) {
     }
   }
 
-  // Depth: push L toward profile target
-  const targetL = profile.depth === "deep" ? 35 : 65;
+  // Depth: continuous target from depthScore (higher depthScore → darker target)
+  const targetL = Math.max(15, Math.min(80, 100 - profile.depthScore));
   for (let k = 0; k < _STEPS_PER_AXIS; k++) {
     const { ok, hex: c } = check();
     if (ok) return c;
     l = Math.max(5, Math.min(90, l + (l < targetL ? _STEP_L : -_STEP_L)));
   }
 
-  // Intensity: push S toward profile target
-  const targetS = profile.intensity === "high" ? 45 : profile.intensity === "low" ? 12 : 28;
+  // Intensity: continuous target from intScore (0..100 mapped to fabric S range)
+  const targetS = Math.max(5, Math.min(62, profile.intScore * 0.62));
   for (let k = 0; k < _STEPS_PER_AXIS; k++) {
     const { ok, hex: c } = check();
     if (ok) return c;
     s = Math.max(0, Math.min(68, s + (s < targetS ? _STEP_S : -_STEP_S)));
   }
 
-  // Contrast: push L away from heaviest assigned item to break dark-on-dark
+  // Contrast: push L away from heaviest assigned item
   if (assignedItems.length > 0) {
     const [,, refL] = normFabric(...hexToHsl(assignedItems[0].hex));
     for (let k = 0; k < _STEPS_PER_AXIS; k++) {
@@ -623,38 +601,28 @@ function correctColor(hex, material, weight, profile, assignedItems) {
   const { ok, hex: c } = check();
   if (ok) return c;
 
-  // Contextual neutral fallback
   return profile.depth === "deep" ? "#1a1a1a" : profile.depth === "light" ? "#f0f0f0" : "#888888";
 }
 
 // ─── Validate outfit balance ──────────────────────────────────────────────────
-// Each item is evaluated individually against the profile via evaluateColorFit.
-// Badge threshold: level >= 2 shown, level 0-1 silent (acceptable slack).
 function validateOutfitBalance(items, profile) {
   const comboResults = evaluateComboFits(items);
   return items.map((item, i) => ({
     season: evaluateColorFit(
-      item.hex,
-      profile,
+      item.hex, profile,
       items.filter((_, j) => j !== i).map(x => x.hex),
-      item.material || "normal",
-      item.weight   || 25
+      item.material || "normal", item.weight || 25
     ),
     combo: comboResults[i],
   }));
 }
 
 // ─── Generate combo ───────────────────────────────────────────────────────────
-// Sequential assignment: heaviest garment first.
-// For each garment: pick best pool color, evaluate in context of already-assigned,
-// apply correctColor if season|combo flag >= 2.
 function generateCombo(type, profile, fixedMap, excludedIds, seed, seasonKey) {
   const rand = seededRand(seed);
-
   const presentGarments = GARMENTS.filter(g => !excludedIds.includes(g.id));
   const presentIds = presentGarments.map(g => g.id);
   const garmentWeights = computeGarmentWeights(presentIds);
-
   const fixedEntries = Object.entries(fixedMap).filter(([id]) => !excludedIds.includes(id));
 
   const anchorH = resolveAnchorH(fixedEntries, garmentWeights, seasonKey, rand);
@@ -679,7 +647,6 @@ function generateCombo(type, profile, fixedMap, excludedIds, seed, seasonKey) {
     [shuffledPool[i], shuffledPool[j]] = [shuffledPool[j], shuffledPool[i]];
   }
 
-  // Assignment order: descending visual weight
   const assignmentOrder = [...presentGarments].sort(
     (a, b) => (garmentWeights[b.id] || 0) - (garmentWeights[a.id] || 0)
   );
@@ -700,11 +667,9 @@ function generateCombo(type, profile, fixedMap, excludedIds, seed, seasonKey) {
       continue;
     }
 
-    // Assigned items so far, sorted heaviest first for consistent combo ordering
     const assignedItems = Object.values(assignedMap).sort((a, b) => b.weight - a.weight);
     const assignedHexes = assignedItems.flatMap(it => [it.hex, ...secondaryHexes(it)]);
 
-    // Pick pool color with lowest season penalty (prefer unused)
     let bestHex = null, bestScore = Infinity, bestUsed = true, bestPi = -1;
     for (let pi = 0; pi < shuffledPool.length; pi++) {
       const hex = shuffledPool[pi];
@@ -728,7 +693,6 @@ function generateCombo(type, profile, fixedMap, excludedIds, seed, seasonKey) {
     };
   }
 
-  // Restore top-down GARMENTS order for display
   return presentGarments.map(g => assignedMap[g.id]);
 }
 
@@ -758,7 +722,6 @@ function colorName(hex) {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// Order is top-down body layering — used for visual weight and combo evaluation sequence
 const GARMENTS = [
   { id: "cappello",  label: "Cappello" },
   { id: "maglia",    label: "Maglia / Camicia" },
@@ -784,8 +747,17 @@ const HARMONIES = [
 ];
 const HARMONY_NAME = Object.fromEntries(HARMONIES.map(h => [h.id, h.name]));
 
+// ─── localStorage ─────────────────────────────────────────────────────────────
 function lsGet(k, fb) { try { const v = localStorage.getItem(k); return v != null ? JSON.parse(v) : fb; } catch { return fb; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+
+const STORAGE_VERSION = "v3";
+(function migrateLs() {
+  if (lsGet("chs_version", null) !== STORAGE_VERSION) {
+    localStorage.clear();
+    lsSet("chs_version", STORAGE_VERSION);
+  }
+})();
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const ThemeCtx = createContext({});
@@ -843,7 +815,7 @@ function ReflexPicker({ label, options, value, onChange, T }) {
         {options.map(opt => {
           const active = value === opt.id;
           return (
-            <button key={opt.id} onClick={() => onChange(active ? null : opt.id)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, border: active ? "1.5px solid " + T.text : "1.5px solid " + T.sep, background: active ? T.card : T.input, cursor: "pointer", transition: "all 0.15s" }}>
+            <button key={opt.id} onClick={() => onChange(opt.id)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, border: active ? "1.5px solid " + T.text : "1.5px solid " + T.sep, background: active ? T.card : T.input, cursor: "pointer", transition: "all 0.15s" }}>
               {opt.color && <div style={{ width: 12, height: 12, borderRadius: "50%", background: opt.color, border: "1px solid rgba(255,255,255,0.3)" }} />}
               <span style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? T.text : T.text2 }}>{opt.label}</span>
               {active && <Check size={9} color={T.text} />}
@@ -967,7 +939,7 @@ function ColorPickerModal({ value, onClose, onChange, savedColors }) {
   );
 }
 
-// ─── ProfileTab ────────────────────────────────────────────────────────────────
+// ─── ProfileTab ───────────────────────────────────────────────────────────────
 function ProfileTab({ skinColor, setSkinColor, eyeColor, setEyeColor, hairColor, setHairColor, season, savedColors, onSave, reflexes, setReflexes }) {
   const T = useT();
   const [showPicker, setShowPicker] = useState(null);
@@ -976,7 +948,9 @@ function ProfileTab({ skinColor, setSkinColor, eyeColor, setEyeColor, hairColor,
       <div style={{ marginBottom: "1.5rem" }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.text3, marginBottom: "0.75rem" }}>Profilo colori</div>
         <div style={{ display: "flex", gap: 12 }}>
-          {[{ label: "Pelle", color: skinColor, key: "skin", set: setSkinColor }, { label: "Occhi", color: eyeColor, key: "eye", set: setEyeColor }, { label: "Capelli", color: hairColor, key: "hair", set: setHairColor }].map(({ label, color, key, set }) => (
+          {[{ label: "Pelle", color: skinColor, key: "skin", set: setSkinColor },
+            { label: "Occhi", color: eyeColor,  key: "eye",  set: setEyeColor  },
+            { label: "Capelli", color: hairColor, key: "hair", set: setHairColor }].map(({ label, color, key, set }) => (
             <div key={key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
               <ColorDot hex={color} size={52} onClick={() => setShowPicker({ key, color, set })} />
               <span style={{ fontSize: 10, color: T.text2 }}>{label}</span>
@@ -984,9 +958,15 @@ function ProfileTab({ skinColor, setSkinColor, eyeColor, setEyeColor, hairColor,
           ))}
         </div>
       </div>
-      <ReflexPicker label="Sottotono Pelle" options={UNDERTONE_OPTIONS} value={reflexes.skin} onChange={v => setReflexes(p => ({ ...p, skin: v }))} T={T} />
-      <ReflexPicker label="Riflessi Occhi"  options={EYE_REFLEXES}      value={reflexes.eye}  onChange={v => setReflexes(p => ({ ...p, eye: v }))}  T={T} />
-      <ReflexPicker label="Riflessi Capelli" options={HAIR_REFLEXES}    value={reflexes.hair} onChange={v => setReflexes(p => ({ ...p, hair: v }))} T={T} />
+
+      <ReflexPicker label="Sottotono Pelle"  options={UNDERTONE_OPTIONS} value={reflexes.skin} onChange={v => setReflexes(p => ({ ...p, skin: v }))} T={T} />
+      <ReflexPicker label="Riflessi Occhi"   options={EYE_REFLEXES}      value={reflexes.eye}  onChange={v => setReflexes(p => ({ ...p, eye: v }))}  T={T} />
+      <ReflexPicker label="Riflessi Capelli" options={HAIR_REFLEXES}      value={reflexes.hair} onChange={v => setReflexes(p => ({ ...p, hair: v }))} T={T} />
+
+      <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid " + T.sep }}>
+        <ReflexPicker label="Volume / Lunghezza Capelli" options={HAIR_VOLUME_OPTIONS} value={reflexes.hairVolume} onChange={v => setReflexes(p => ({ ...p, hairVolume: v }))} T={T} />
+      </div>
+
       <div style={{ marginTop: "2rem", padding: "1rem", borderRadius: 16, background: T.card, border: T.cardB, boxShadow: T.cardS }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <span style={{ fontSize: 22 }}>{season.emoji}</span>
@@ -999,10 +979,10 @@ function ProfileTab({ skinColor, setSkinColor, eyeColor, setEyeColor, hairColor,
         <div style={{ marginTop: 8, fontSize: 10, color: T.text3 }}>
           Undertone: <b style={{ color: T.text }}>{season.undertone === "warm" ? "Caldo" : season.undertone === "cool" ? "Freddo" : "Neutro"}</b>
           {" · "}Profondità: <b style={{ color: T.text }}>{season.depth === "deep" ? "Scura" : "Chiara"}</b>
-          {/* FIX #2: season.intensity (not season.intensityLevel) */}
           {" · "}Intensità: <b style={{ color: T.text }}>{season.intensity === "high" ? "Alta" : season.intensity === "low" ? "Bassa" : "Media"}</b>
         </div>
       </div>
+
       {showPicker && (
         <ColorPickerModal value={showPicker.color} onClose={() => setShowPicker(null)} onChange={hex => { showPicker.set(hex); onSave(showPicker.key, hex); }} savedColors={savedColors[showPicker.key] || []} />
       )}
@@ -1010,20 +990,18 @@ function ProfileTab({ skinColor, setSkinColor, eyeColor, setEyeColor, hairColor,
   );
 }
 
-// ─── OutfitCard ────────────────────────────────────────────────────────────────
+// ─── OutfitCard ───────────────────────────────────────────────────────────────
 function OutfitCard({ combo, season, skinColor, hairColor }) {
   const T = useT();
   const [expanded, setExpanded] = useState(false);
-  const [tooltip, setTooltip] = useState(null); // index of item showing tooltip
+  const [tooltip, setTooltip] = useState(null);
 
   const profile = {
-    undertone: season.undertone,
-    depth: season.depth,
-    intensity: season.intensity,
+    undertone: season.undertone, depth: season.depth, intensity: season.intensity,
+    utScore: season.utScore, depthScore: season.depthScore, intScore: season.intScore,
     contrastLevel: classifyContrastLevel(skinColor, hairColor),
   };
 
-  // Pass original screen-space hex: evaluateComboFits normalizes internally
   const validationResults = validateOutfitBalance(combo.items, profile);
   const seasonFits = validationResults.map(r => r.season);
   const comboFits  = validationResults.map(r => r.combo);
@@ -1054,7 +1032,6 @@ function OutfitCard({ combo, season, skinColor, hairColor }) {
             const showTip = tooltip === i;
             return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px", borderRadius: 10, background: T.input, position: "relative" }}>
-                {/* Swatch shows fabric-normalized color */}
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: displayHex, border: "1.5px solid rgba(255,255,255,0.25)", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
@@ -1063,16 +1040,10 @@ function OutfitCard({ combo, season, skinColor, hairColor }) {
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
                   {seasonFits[i] > 0 && <FitBadge type="season" level={seasonFits[i]} />}
                   {comboFits[i]  > 0 && <FitBadge type="combo"  level={comboFits[i]}  />}
-                  {/* ⓘ icon: shown whenever color is normalized (always for fabric output) */}
                   {isNormalized && (
-                    <span
-                      onClick={e => { e.stopPropagation(); setTooltip(showTip ? null : i); }}
-                      style={{ fontSize: 11, color: T.text3, cursor: "pointer", userSelect: "none", lineHeight: 1, flexShrink: 0 }}
-                      title="Colore normalizzato per tessuto reale"
-                    >ⓘ</span>
+                    <span onClick={e => { e.stopPropagation(); setTooltip(showTip ? null : i); }} style={{ fontSize: 11, color: T.text3, cursor: "pointer", userSelect: "none", lineHeight: 1, flexShrink: 0 }} title="Colore normalizzato per tessuto reale">ⓘ</span>
                   )}
                 </div>
-                {/* Tooltip */}
                 {showTip && (
                   <div style={{ position: "absolute", right: 8, top: "100%", zIndex: 50, marginTop: 4, padding: "6px 10px", borderRadius: 8, background: T.modal, border: T.cardB, boxShadow: T.cardS, fontSize: 10, color: T.text2, maxWidth: 200, lineHeight: 1.5 }}>
                     <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
@@ -1103,12 +1074,10 @@ function WardrobeTab({ modes, setModes, fixedColors, setFixedColors, savedGarmen
   const presentIds = GARMENTS.filter(g => modes[g.id] !== "excluded").map(g => g.id);
   const liveWeights = computeGarmentWeights(presentIds);
   const profile = {
-    undertone: season.undertone,
-    depth: season.depth,
-    intensity: season.intensity,
+    undertone: season.undertone, depth: season.depth, intensity: season.intensity,
+    utScore: season.utScore, depthScore: season.depthScore, intScore: season.intScore,
     contrastLevel: classifyContrastLevel(skinColor, hairColor),
   };
-  // comboHexes: other fixed garments normalized to fabric-space for evaluation
   const fixedComboHexes = useCallback((gid) =>
     GARMENTS
       .filter(g => g.id !== gid && modes[g.id] === "fixed")
@@ -1123,7 +1092,6 @@ function WardrobeTab({ modes, setModes, fixedColors, setFixedColors, savedGarmen
         const fixed = normalizeEntry(fixedColors[g.id] || {});
         const isExpanded = expandedGarment === g.id;
         const weight = liveWeights[g.id] || 0;
-        // Fit evaluation uses normalized hex
         const fitLevel = mode === "fixed"
           ? evaluateColorFit(normHex(fixed.hex, normFabric), profile, fixedComboHexes(g.id), fixed.material, weight)
           : 0;
@@ -1139,7 +1107,6 @@ function WardrobeTab({ modes, setModes, fixedColors, setFixedColors, savedGarmen
               </select>
               {mode === "fixed" && (
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
-                  {/* ColorDot shows original hex (user recognizes this color) */}
                   <ColorDot hex={fixed.hex} size={32} onClick={() => setShowPicker({ gid: g.id, entry: fixed })} />
                   <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: T.input, color: T.text3 }}>{weight}%</span>
                   {fixed.material === "jeans" && <span style={{ fontSize: 10 }}>👖</span>}
@@ -1154,7 +1121,6 @@ function WardrobeTab({ modes, setModes, fixedColors, setFixedColors, savedGarmen
             {isExpanded && mode === "fixed" && (
               <div style={{ padding: "0 0.875rem 0.875rem" }}>
                 <button onClick={() => setShowPicker({ gid: g.id, entry: fixed })} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px", borderRadius: 10, border: T.inputB, background: T.input, cursor: "pointer", marginBottom: "0.75rem" }}>
-                  {/* Split swatch: original (left) | fabric-normalized (right) */}
                   <div style={{ display: "flex", gap: 0, flexShrink: 0, borderRadius: 8, overflow: "hidden", border: "1.5px solid rgba(255,255,255,0.3)" }}>
                     <div style={{ width: 36, height: 36, background: fixed.hex }} />
                     <div style={{ width: 36, height: 36, background: normPreview }} />
@@ -1204,7 +1170,7 @@ function WardrobeTab({ modes, setModes, fixedColors, setFixedColors, savedGarmen
           onClose={() => setShowPicker(null)}
           onChange={hex => {
             setFixedColors(p => ({ ...p, [showPicker.gid]: { ...normalizeEntry(p[showPicker.gid]), hex } }));
-onSaveGarment(showPicker.gid, hex);
+            onSaveGarment(showPicker.gid, hex);
           }}
           savedColors={savedGarment[showPicker.gid] || []}
         />
@@ -1252,10 +1218,10 @@ export default function App() {
   const [eyeColor,   setEyeColor]   = useState(() => lsGet("chs_eyeColor",   "#6B4423"));
   const [hairColor,  setHairColor]  = useState(() => lsGet("chs_hairColor",  "#3D2B1F"));
   const [savedColors, setSavedColors] = useState(() => lsGet("chs_savedColors", { skin: [], eye: [], hair: [] }));
-  const [reflexes,   setReflexes]   = useState(() => lsGet("chs_reflexes",   { skin: null, eye: null, hair: null }));
-  const [modes,      setModes]      = useState(() => lsGet("chs_modes", {
+  const [reflexes, setReflexes] = useState(() => lsGet("chs_reflexes", { skin: "neutral", eye: "neutral", hair: "neutral", hairVolume: "medium" }));
+  const [modes, setModes] = useState(() => lsGet("chs_modes", {
     ...Object.fromEntries(GARMENTS.map(g => [g.id, "auto"])),
-    cappello: "excluded", // opt-in: most users don't wear a hat
+    cappello: "excluded",
   }));
   const [fixedColors, setFixedColors] = useState(() => {
     const saved = lsGet("chs_fixedColors", null);
@@ -1271,17 +1237,16 @@ export default function App() {
   const season = detectSeason(skinColor, eyeColor, hairColor, reflexes);
 
   useEffect(() => { const m = document.querySelector("meta[name=theme-color]"); if (m) m.setAttribute("content", dark ? "#000000" : "#f2f2f7"); }, [dark]);
-  useEffect(() => { lsSet("chs_skinColor",   skinColor);   }, [skinColor]);
-  useEffect(() => { lsSet("chs_eyeColor",    eyeColor);    }, [eyeColor]);
-  useEffect(() => { lsSet("chs_hairColor",   hairColor);   }, [hairColor]);
-  useEffect(() => { lsSet("chs_savedColors", savedColors); }, [savedColors]);
-  useEffect(() => { lsSet("chs_reflexes",    reflexes);    }, [reflexes]);
-  useEffect(() => { lsSet("chs_modes",       modes);       }, [modes]);
-  useEffect(() => { lsSet("chs_fixedColors", fixedColors); }, [fixedColors]);
-  useEffect(() => { lsSet("chs_savedGarment",savedGarment);}, [savedGarment]);
-  useEffect(() => { lsSet("chs_comboCount",  comboCount);  }, [comboCount]);
+  useEffect(() => { lsSet("chs_skinColor",    skinColor);    }, [skinColor]);
+  useEffect(() => { lsSet("chs_eyeColor",     eyeColor);     }, [eyeColor]);
+  useEffect(() => { lsSet("chs_hairColor",    hairColor);    }, [hairColor]);
+  useEffect(() => { lsSet("chs_savedColors",  savedColors);  }, [savedColors]);
+  useEffect(() => { lsSet("chs_reflexes",     reflexes);     }, [reflexes]);
+  useEffect(() => { lsSet("chs_modes",        modes);        }, [modes]);
+  useEffect(() => { lsSet("chs_fixedColors",  fixedColors);  }, [fixedColors]);
+  useEffect(() => { lsSet("chs_savedGarment", savedGarment); }, [savedGarment]);
+  useEffect(() => { lsSet("chs_comboCount",   comboCount);   }, [comboCount]);
 
-  // FIX #9: dependency array uses stable primitives — no JSON.stringify
   const fixedMap = useMemo(
     () => Object.fromEntries(GARMENTS.filter(g => modes[g.id] === "fixed").map(g => [g.id, normalizeEntry(fixedColors[g.id])])),
     [modes, fixedColors]
@@ -1299,13 +1264,11 @@ export default function App() {
       type: h.id,
       items: generateCombo(h.id, bioAnchor, fixedMap, excludedIds, baseSeed + i * 7, seasonKey),
     })));
-  // FIX #9: all deps are stable primitives or memoized objects — no JSON.stringify
   }, [skinColor, eyeColor, hairColor, reflexes, fixedMap, excludedIds, season.base, season.sub, refreshKey]);
 
   useEffect(() => { generate(); }, [generate]);
 
-  const handleSaveColor   = (key, color) => setSavedColors(p  => ({ ...p, [key]: [...new Set([color, ...(p[key] || [])])].slice(0, 8) }));
-  // FIX #8: handler now wired and functional
+  const handleSaveColor   = (key, color) => setSavedColors(p  => ({ ...p, [key]: [...new Set([color, ...(p[key]  || [])])].slice(0, 8) }));
   const handleSaveGarment = (gid, color) => setSavedGarment(p => ({ ...p, [gid]: [...new Set([color, ...(p[gid] || [])])].slice(0, 6) }));
 
   const TABS = [{ id: "profile", label: "Profilo", Icon: User }, { id: "wardrobe", label: "Guardaroba", Icon: Shirt }, { id: "results", label: "Outfit", Icon: LayoutGrid }];
