@@ -15,19 +15,21 @@ Ultimo aggiornamento: 18 luglio 2026.
 |---|---|
 | Framework | React 18.3.1 |
 | Build tool | Vite 5.4.x |
-| Linguaggio | JavaScript/JSX |
+| Linguaggio | JavaScript/JSX con bootstrap e configurazione TypeScript |
 | PWA | `vite-plugin-pwa` 0.20.x |
 | Icone UI | `lucide-react` |
 | Persistenza | `localStorage` |
 | Hosting | configurazione Netlify presente |
 | Test automatici | assenti |
-| TypeScript | assente |
+| TypeScript | baseline presente; migrazione graduale con `allowJs` |
+| Type-check | disponibile tramite `npm run typecheck` |
+| Lockfile | `package-lock.json` presente |
 | Linting/formatting | assenti |
 | CI | assente |
 | Backend | assente |
 | Account/sincronizzazione | assenti |
 
-La build di produzione è stata verificata il 18 luglio 2026 con `npm install` e `npm run build`. L'installazione risolta in quella data ha segnalato tre vulnerabilità npm: due moderate e una alta. Il repository sorgente analizzato non conteneva un lockfile, quindi la risoluzione effettiva delle dipendenze può cambiare tra installazioni.
+L'installazione riproducibile, il type-check e la build di produzione sono stati verificati il 18 luglio 2026 con `npm ci`, `npm run typecheck` e `npm run build`. `npm audit --omit=dev` non ha rilevato vulnerabilità nelle dipendenze distribuite in produzione. L'audit completo segnala tre vulnerabilità nella toolchain di sviluppo, due moderate e una alta; la correzione automatica proposta richiede aggiornamenti major non inclusi in questo incremento. Il repository contiene ora `package-lock.json`.
 
 ## Struttura corrente
 
@@ -35,12 +37,15 @@ La build di produzione è stata verificata il 18 luglio 2026 con `npm install` e
 src/
   App.jsx       circa 1.352 righe
   index.css     circa 35 righe
-  main.jsx
+  main.tsx
+  vite-env.d.ts
 public/
   apple-touch-icon.png
   icon-192.png
   icon-512.png
-vite.config.js
+package-lock.json
+tsconfig.json
+vite.config.ts
 netlify.toml
 ```
 
@@ -86,9 +91,8 @@ netlify.toml
 ### Tecnici
 
 - Elevato accoppiamento in un singolo file.
-- Assenza di tipi, test e convalida runtime dei dati persistiti.
+- Il bootstrap e la configurazione sono tipizzati, ma `App.jsx`, il dominio cromatico, la persistenza e i dati salvati restano non tipizzati e privi di validazione runtime.
 - Generazione basata anche su `Date.now()`, quindi non completamente riproducibile dall'esterno.
-- Assenza di lockfile nel baseline analizzato.
 - Dipendenza specifica da Netlify nella configurazione di deploy.
 - Stili prevalentemente inline, difficili da governare come design system.
 
@@ -103,10 +107,14 @@ netlify.toml
 
 Creare una baseline TypeScript senza cambiare intenzionalmente l'algoritmo:
 
-1. aggiungere configurazione TypeScript;
-2. estrarre conversioni e tipi del dominio;
-3. aggiungere test di caratterizzazione;
-4. rendere deterministico il motore nei test;
-5. documentare ogni euristica estratta.
+## Prossima attività
 
-Criterio di completamento: stessa funzionalità utente, build locale funzionante, motore invocabile senza React e prima suite di test eseguibile.
+Completare la milestone TypeScript e testabilità senza cambiare intenzionalmente l'algoritmo:
+
+1. introdurre un test runner;
+2. definire i primi tipi fondamentali del dominio;
+3. aggiungere test di caratterizzazione della baseline;
+4. estrarre le prime conversioni e utility pure;
+5. rendere esplicito il seed nei moduli estratti.
+
+Criterio di completamento: motore invocabile senza React almeno per i primi moduli estratti, test locali eseguibili con un singolo comando, build PWA funzionante e nessuna regressione intenzionale nell'interfaccia.

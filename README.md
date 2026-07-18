@@ -24,7 +24,7 @@ Il progetto è in una fase di ristrutturazione. Le priorità attuali sono:
 - Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
 - Selezione manuale dei colori e campionamento da immagine.
 
-La quasi totalità dell'applicazione è attualmente contenuta in `src/App.jsx`. Non sono ancora presenti TypeScript, test automatici, linting o CI.
+La quasi totalità dell'applicazione è attualmente contenuta in `src/App.jsx`. È presente una baseline TypeScript per il bootstrap e la configurazione di build; `App.jsx` e il motore cromatico restano temporaneamente JavaScript. Non sono ancora presenti test automatici, linting o CI.
 
 ## Avvio locale
 
@@ -34,13 +34,15 @@ Requisiti:
 - npm.
 
 ```bash
-npm install
+npm ci
+npm run typecheck
 npm run dev
 ```
 
 Build di produzione:
 
 ```bash
+npm run typecheck
 npm run build
 npm run preview
 ```
