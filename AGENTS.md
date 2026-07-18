@@ -100,3 +100,14 @@ Aggiornare i documenti interessati quando una modifica cambia:
 - stato delle decisioni.
 
 Registrare le decisioni irreversibili o costose in `docs/DECISIONS.md`.
+
+## Strategia dei branch
+
+- `main` rappresenta la versione stabile, verificata e pubblicabile.
+- `dev` rappresenta il ramo di sviluppo e integrazione corrente.
+- Le modifiche ordinarie vengono applicate e verificate su `dev`.
+- `main` non deve ricevere direttamente sviluppi incompleti o non verificati.
+- Prima di integrare `dev` in `main` devono essere eseguiti tutti i controlli disponibili, inclusi installazione riproducibile, type-check, test, build e verifica manuale pertinente.
+- L’integrazione da `dev` a `main` deve avvenire tramite pull request.
+- Le correzioni applicate direttamente a `main` devono essere riportate anche su `dev` per evitare divergenze.
+- Branch aggiuntivi non sono obbligatori e vanno introdotti solo quando servono a isolare attività concorrenti, rischiose o di lunga durata.
