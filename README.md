@@ -24,7 +24,11 @@ Il progetto è in una fase di ristrutturazione. Le priorità attuali sono:
 - Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
 - Selezione manuale dei colori e campionamento da immagine.
 
-La quasi totalità dell'applicazione è attualmente contenuta in `src/App.jsx`. È presente una baseline TypeScript per il bootstrap e la configurazione di build; `App.jsx` e il motore cromatico restano temporaneamente JavaScript. Non sono ancora presenti test automatici, linting o CI.
+La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Le conversioni pure tra colore esadecimale e HSL sono state estratte in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
+
+I relativi test di caratterizzazione sono eseguiti con Vitest. Questi test preservano il comportamento della baseline durante la migrazione, ma non costituiscono una validazione scientifica del modello HSL o del motore cromatico.
+
+Il resto del motore, la persistenza e la maggior parte della UI restano temporaneamente in JavaScript/JSX. Linting e CI non sono ancora presenti.
 
 ## Avvio locale
 
@@ -36,6 +40,7 @@ Requisiti:
 ```bash
 npm ci
 npm run typecheck
+npm test
 npm run dev
 ```
 
@@ -43,6 +48,7 @@ Build di produzione:
 
 ```bash
 npm run typecheck
+npm test
 npm run build
 npm run preview
 ```

@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 18 luglio 2026.
+Ultimo aggiornamento: 19 luglio 2026.
 
 ## Identità
 
@@ -20,9 +20,10 @@ Ultimo aggiornamento: 18 luglio 2026.
 | Icone UI | `lucide-react` |
 | Persistenza | `localStorage` |
 | Hosting | configurazione Netlify presente |
-| Test automatici | assenti |
-| TypeScript | baseline presente; migrazione graduale con `allowJs` |
+| Test automatici | Vitest 3.2.7; primi test di caratterizzazione presenti |
+| TypeScript | migrazione graduale con `allowJs`; primo modulo cromatico estratto |
 | Type-check | disponibile tramite `npm run typecheck` |
+| Test | disponibili tramite `npm test` |
 | Lockfile | `package-lock.json` presente |
 | Linting/formatting | assenti |
 | CI | assente |
@@ -30,28 +31,37 @@ Ultimo aggiornamento: 18 luglio 2026.
 | Account/sincronizzazione | assenti |
 
 L'installazione riproducibile, il type-check e la build di produzione sono stati verificati il 18 luglio 2026 con `npm ci`, `npm run typecheck` e `npm run build`. `npm audit --omit=dev` non ha rilevato vulnerabilità nelle dipendenze distribuite in produzione. L'audit completo segnala tre vulnerabilità nella toolchain di sviluppo, due moderate e una alta; la correzione automatica proposta richiede aggiornamenti major non inclusi in questo incremento. Il repository contiene ora `package-lock.json`.
+Il 19 luglio 2026 sono stati verificati localmente `npm test`, `npm run typecheck` e `npm run build` dopo l'introduzione di Vitest e l'estrazione delle conversioni cromatiche. I test introdotti sono test di caratterizzazione: documentano il comportamento corrente, ma non dimostrano la correttezza scientifica delle formule.
 
 ## Struttura corrente
 
 ```text
+```text
 src/
-  App.jsx       circa 1.352 righe
-  index.css     circa 35 righe
+  App.jsx
+  color.ts
+  index.css
   main.tsx
   vite-env.d.ts
+tests/
+  color.characterization.test.ts
 public/
   apple-touch-icon.png
   icon-192.png
   icon-512.png
+package.json
 package-lock.json
 tsconfig.json
 vite.config.ts
 netlify.toml
 ```
 
-`src/App.jsx` contiene contemporaneamente:
+`src/color.ts` contiene le conversioni pure `hexToHsl` e `hslToHex`, tipizzate tramite la tupla `Hsl` e indipendenti da React, DOM, stato e persistenza.
 
-- conversioni cromatiche;
+`tests/color.characterization.test.ts` verifica colori canonici, casi acromatici, normalizzazione e clamp dei valori HSL e round trip rappresentativi.
+
+La maggior parte dell'applicazione resta concentrata in `src/App.jsx`, che contiene:
+
 - normalizzazioni euristiche;
 - classificazione del profilo;
 - season detection;
@@ -89,8 +99,8 @@ netlify.toml
 
 ### Tecnici
 
-- Elevato accoppiamento in un singolo file.
-- Il bootstrap e la configurazione sono tipizzati, ma `App.jsx`, il dominio cromatico, la persistenza e i dati salvati restano non tipizzati e privi di validazione runtime.
+- Elevato accoppiamento residuo in `src/App.jsx`, nonostante la prima estrazione delle conversioni pure.
+- Il bootstrap, la configurazione e `src/color.ts` sono tipizzati, ma il resto del dominio cromatico, la persistenza e i dati salvati restano non tipizzati e privi di validazione runtime.
 - Generazione basata anche su `Date.now()`, quindi non completamente riproducibile dall'esterno.
 - Dipendenza specifica da Netlify nella configurazione di deploy.
 - Stili prevalentemente inline, difficili da governare come design system.
@@ -100,20 +110,24 @@ netlify.toml
 - Primo avvio già operativo, ma senza percorso guidato o spiegazione dell'incertezza.
 - L'interfaccia può suggerire una precisione superiore a quella realmente dimostrata.
 - Nessuna infrastruttura per analytics, consenso o pubblicità.
-- Nome, icona, manifest e README non sono ancora allineati ad Armonia.
+
+## Incremento completato
+
+- introdotto Vitest 3.2.7 senza configurazione separata;
+- aggiunto il comando `npm test`;
+- definita la tupla TypeScript `Hsl`;
+- estratte `hexToHsl` e `hslToHex` in `src/color.ts`;
+- aggiunti test di caratterizzazione per conversioni, clamp, normalizzazione e round trip;
+- mantenuto invariato il comportamento intenzionale dell'applicazione;
+- verificati test, type-check e build di produzione.
 
 ## Prossima attività
 
-Creare una baseline TypeScript senza cambiare intenzionalmente l'algoritmo:
+Proseguire la separazione incrementale del dominio senza modificare le formule:
 
-## Prossima attività
+1. caratterizzare le funzioni pure di normalizzazione HSL;
+2. estrarre tali funzioni nello stesso `src/color.ts`, finché il file resta coeso e leggibile;
+3. evitare nuove cartelle o file finché non esiste una necessità concreta;
+4. mantenere distinti test di caratterizzazione e futuri test di conformità colorimetrica.
 
-Completare la milestone TypeScript e testabilità senza cambiare intenzionalmente l'algoritmo:
-
-1. introdurre un test runner;
-2. definire i primi tipi fondamentali del dominio;
-3. aggiungere test di caratterizzazione della baseline;
-4. estrarre le prime conversioni e utility pure;
-5. rendere esplicito il seed nei moduli estratti.
-
-Criterio di completamento: motore invocabile senza React almeno per i primi moduli estratti, test locali eseguibili con un singolo comando, build PWA funzionante e nessuna regressione intenzionale nell'interfaccia.
+Criterio di completamento del prossimo incremento: normalizzazioni invocabili senza React, comportamento corrente coperto da test, type-check e build positivi, nessuna regressione intenzionale nella UI.
