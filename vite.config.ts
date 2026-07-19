@@ -9,9 +9,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Color Harmony · Armocromia',
-        short_name: 'Color Harmony',
-        description: 'Armocromia scientifica per il tuo guardaroba',
+        name: 'Armonia',
+        short_name: 'Armonia',
+        description: 'Analisi cromatica personale e combinazioni di colori per il guardaroba',
+        lang: 'it',
         theme_color: '#faf8f2',
         background_color: '#faf8f2',
         display: 'standalone',

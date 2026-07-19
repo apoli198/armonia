@@ -5,7 +5,7 @@ Ultimo aggiornamento: 18 luglio 2026.
 ## Identità
 
 - Nome corrente: **Armonia**.
-- Nome ancora presente nel codice e nei metadati: **Color Harmony**.
+- Codice e metadati principali allineati al nome **Armonia**.
 - Repository canonica: https://github.com/apoli198/armonia
 - Strategia: web app/PWA prima, store successivamente.
 
@@ -86,7 +86,6 @@ netlify.toml
 - La classificazione stagionale è deterministica ma non restituisce confidenza o alternative vicine.
 - Il campionamento fotografico non controlla illuminazione, bilanciamento del bianco, camera, esposizione o profilo colore.
 - Le regole di armonia implementate non derivano attualmente da un modello psicofisico validato.
-- Il testo PWA dichiara “Armocromia scientifica”, affermazione non supportata dallo stato corrente.
 
 ### Tecnici
 
