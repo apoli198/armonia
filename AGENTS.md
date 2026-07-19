@@ -109,3 +109,4 @@ Registrare le decisioni irreversibili o costose in `docs/DECISIONS.md`.
 - I branch temporanei sono facoltativi e devono essere usati solo per attività concorrenti, rischiose, sperimentali o di lunga durata.
 - I branch temporanei devono essere eliminati dopo l’integrazione.
 - Non viene mantenuto un branch `dev` permanente.
+- Non prescrivere automaticamente commit o push dopo ogni intervento. Il proprietario decide quando registrarli; segnalare un punto consigliato per commit solo per modifiche critiche, rischiose o logicamente complete.
