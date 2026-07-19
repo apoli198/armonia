@@ -1283,7 +1283,7 @@ export default function App() {
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
             <div style={{ padding: "1rem 1.25rem 0.5rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
               <div>
-                <div style={{ fontFamily: "Georgia,serif", fontSize: 28, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>Color Harmony</div>
+                <div style={{ fontFamily: "Georgia,serif", fontSize: 28, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>Armonia</div>
                 <div style={{ fontSize: 12, color: T.text2, marginTop: 4 }}>{season.emoji} {season.name}</div>
               </div>
               <button onClick={toggleDark} style={{ width: 36, height: 36, borderRadius: "50%", border: T.cardB, background: T.card, backdropFilter: T.bd, WebkitBackdropFilter: T.bd, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: T.cardS, flexShrink: 0, marginTop: 4 }}>

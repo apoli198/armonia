@@ -5,7 +5,7 @@ Ultimo aggiornamento: 18 luglio 2026.
 ## Identità
 
 - Nome corrente: **Armonia**.
-- Nome ancora presente nel codice e nei metadati: **Color Harmony**.
+- Codice e metadati principali allineati al nome **Armonia**.
 - Repository canonica: https://github.com/apoli198/armonia
 - Strategia: web app/PWA prima, store successivamente.
 
