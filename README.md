@@ -14,19 +14,31 @@ Il progetto è in una fase di ristrutturazione. Le priorità attuali sono:
 
 ## Stato attuale
 
-- React 18 e Vite 5.
-- PWA tramite `vite-plugin-pwa`.
-- Persistenza locale tramite `localStorage`.
-- Deploy configurato per Netlify.
-- Interfaccia mobile-first con modalità chiara e scura.
-- Analisi di pelle, occhi e capelli.
-- Classificazione nel modello a 12 stagioni.
-- Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
-- Selezione manuale dei colori e campionamento da immagine.
+* React 18 e Vite 5.
+* PWA tramite `vite-plugin-pwa`.
+* Persistenza locale tramite `localStorage`.
+* Deploy configurato per Netlify.
+* Interfaccia mobile-first con modalità chiara e scura.
+* Analisi di pelle, occhi e capelli.
+* Classificazione nel modello a 12 stagioni.
+* Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
+* Selezione manuale dei colori e campionamento da immagine.
 
-La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Le conversioni tra colore esadecimale e HSL e le normalizzazioni euristiche per tessuto, pelle, occhi e capelli sono state estratte in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
+La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Il blocco cromatico di base è stato estratto in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
 
-I relativi test di caratterizzazione sono eseguiti con Vitest e coprono conversioni, round trip, normalizzazione della hue, clamp, curve di normalizzazione e casi fuori dagli intervalli nominali. Questi test preservano il comportamento della baseline durante la migrazione, ma non costituiscono una validazione scientifica del modello HSL o delle curve euristiche.
+Il modulo comprende:
+
+* rappresentazione HSL tipizzata;
+* conversioni tra colore esadecimale e HSL;
+* normalizzazioni euristiche per tessuto, pelle, occhi e capelli;
+* range biologici euristici;
+* validazione dei colori biologici.
+
+I relativi test di caratterizzazione sono eseguiti con Vitest. I 53 test correnti coprono conversioni, round trip, normalizzazione della hue, clamp, curve di normalizzazione, valori fuori dagli intervalli nominali, range biologici e validazione.
+
+Questi test preservano il comportamento della baseline durante la migrazione, ma non costituiscono una validazione scientifica del modello HSL, delle curve o dei range biologici.
+
+La validazione biologica è attualmente disponibile nel dominio e coperta da test, ma non è ancora collegata alla UI.
 
 Il resto del motore, la persistenza e la maggior parte della UI restano temporaneamente in JavaScript/JSX. Linting e CI non sono ancora presenti.
 
@@ -34,8 +46,8 @@ Il resto del motore, la persistenza e la maggior parte della UI restano temporan
 
 Requisiti:
 
-- Node.js supportato dalla versione di Vite installata;
-- npm.
+* Node.js supportato dalla versione di Vite installata;
+* npm.
 
 ```bash
 npm ci
@@ -59,11 +71,11 @@ La documentazione di progetto è indicizzata in [`docs/INDEX.md`](docs/INDEX.md)
 
 Prima di modificare il motore cromatico, leggere almeno:
 
-- [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
-- [`docs/COLOR_ENGINE_SPEC.md`](docs/COLOR_ENGINE_SPEC.md)
-- [`docs/SCIENTIFIC_SOURCES.md`](docs/SCIENTIFIC_SOURCES.md)
-- [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)
-- [`docs/DECISIONS.md`](docs/DECISIONS.md)
+* [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
+* [`docs/COLOR_ENGINE_SPEC.md`](docs/COLOR_ENGINE_SPEC.md)
+* [`docs/SCIENTIFIC_SOURCES.md`](docs/SCIENTIFIC_SOURCES.md)
+* [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)
+* [`docs/DECISIONS.md`](docs/DECISIONS.md)
 
 ## Roadmap
 

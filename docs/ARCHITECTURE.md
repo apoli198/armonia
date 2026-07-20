@@ -4,11 +4,32 @@
 
 L'applicazione è un client React/Vite interamente locale. `src/App.jsx` concentra ancora la maggior parte del dominio, dello stato, della persistenza e della presentazione.
 
-Le conversioni pure `hexToHsl` e `hslToHex`, le normalizzazioni euristiche per tessuto e componenti biologici e la funzione `normHex` sono state estratte in `src/color.ts`. Il modulo è scritto in TypeScript e non dipende da React, DOM, stato applicativo o persistenza.
+Il blocco cromatico di base è stato estratto in `src/color.ts`. Il modulo è scritto in TypeScript e non dipende da React, DOM, stato applicativo o persistenza.
 
-Gli helper matematici `_sigL` e `_powS` restano privati al modulo. L'interfaccia pubblica espone i tipi `Hsl` e `HslNormalizer` insieme alle funzioni utilizzate dall'applicazione.
+Il modulo comprende:
 
-I test di caratterizzazione sono mantenuti nel singolo file `tests/color.characterization.test.ts`. Coprono il comportamento corrente delle conversioni e delle normalizzazioni, inclusi alcuni comportamenti fuori dagli intervalli nominali, senza attribuire validità scientifica alle curve.
+* rappresentazione HSL;
+* conversioni tra esadecimale e HSL;
+* normalizzazioni euristiche per tessuto e componenti biologici;
+* range biologici euristici;
+* validazione dei colori biologici.
+
+Gli helper matematici `_sigL` e `_powS` restano privati al modulo.
+
+L'interfaccia pubblica espone:
+
+* `Hsl`;
+* `HslNormalizer`;
+* `BioComponent`;
+* `BIO_RANGES`;
+* funzioni di conversione;
+* funzioni di normalizzazione;
+* `normHex`;
+* `validateBioColor`.
+
+I test di caratterizzazione sono mantenuti nel singolo file `tests/color.characterization.test.ts`. I 53 test coprono il comportamento corrente del blocco, inclusi limiti e comportamenti fuori dagli intervalli nominali, senza attribuire validità scientifica alle curve o ai range.
+
+La validazione biologica è disponibile nel dominio, ma non è ancora integrata nella UI.
 
 La struttura è mantenuta intenzionalmente minima: non vengono create cartelle, moduli di re-export o file di tipi separati finché la complessità effettiva non li rende necessari.
 
@@ -16,12 +37,12 @@ Il service worker è generato da `vite-plugin-pwa`. Non esistono API o backend.
 
 ## Obiettivi
 
-- rendere il motore cromatico indipendente da React;
-- migrare progressivamente a TypeScript;
-- consentire test deterministici in locale;
-- isolare persistenza, analytics e pubblicità;
-- mantenere il deploy su hosting statico indipendente dal provider;
-- preparare, senza implementarla prematuramente, una futura distribuzione mobile.
+* rendere il motore cromatico indipendente da React;
+* migrare progressivamente a TypeScript;
+* consentire test deterministici in locale;
+* isolare persistenza, analytics e pubblicità;
+* mantenere il deploy su hosting statico indipendente dal provider;
+* preparare, senza implementarla prematuramente, una futura distribuzione mobile.
 
 ## Architettura target
 
@@ -97,11 +118,13 @@ Il dominio non deve importare React, DOM, `localStorage`, provider pubblicitari 
 
 Deve contenere almeno:
 
-- valore del colore;
-- spazio colore e white point;
-- origine: manuale, fotografia, dataset o misura;
-- metadati di acquisizione disponibili;
-- livello di affidabilità.
+* valore del colore;
+* spazio colore e white point;
+* origine: manuale, fotografia, dataset o misura;
+* metadati di acquisizione disponibili;
+* livello di affidabilità.
+
+Il contratto corrente `BioComponent` distingue `skin`, `eyes` e `hair`. La UI usa ancora in alcuni punti `eye`; l'adattamento tra UI e dominio dovrà essere esplicito.
 
 ### Profilo
 
@@ -111,24 +134,24 @@ Deve distinguere valori continui e categorie derivate. Le categorie non devono s
 
 Deve includere:
 
-- proposta o classificazione;
-- score;
-- confidenza o margine;
-- motivazioni principali;
-- avvertenze;
-- versione del modello;
-- seed, quando applicabile.
+* proposta o classificazione;
+* score;
+* confidenza o margine;
+* motivazioni principali;
+* avvertenze;
+* versione del modello;
+* seed, quando applicabile.
 
 ## Persistenza
 
 `localStorage` può restare nella prima fase, ma deve essere racchiuso in un adapter con:
 
-- schema versionato;
-- valori predefiniti;
-- validazione runtime;
-- migrazioni;
-- gestione esplicita degli errori;
-- possibilità di sostituzione futura.
+* schema versionato;
+* valori predefiniti;
+* validazione runtime;
+* migrazioni;
+* gestione esplicita degli errori;
+* possibilità di sostituzione futura.
 
 Le chiavi attuali `chs_*` devono essere migrate senza perdita di dati oppure supportate temporaneamente come legacy.
 
@@ -136,9 +159,9 @@ Le chiavi attuali `chs_*` devono essere migrate senza perdita di dati oppure sup
 
 Le funzioni del motore devono ricevere esplicitamente:
 
-- input;
-- configurazione/versione del modello;
-- seed pseudocasuale.
+* input;
+* configurazione/versione del modello;
+* seed pseudocasuale.
 
 `Date.now()` non deve essere letto all'interno del dominio. L'orchestratore può generare il seed e registrarlo nel risultato.
 
@@ -163,20 +186,23 @@ La scelta tra wrapper web, Capacitor o implementazione più nativa deve essere e
 ## Sequenza di migrazione
 
 1. **Completato:** aggiungere TypeScript mantenendo l'entrypoint React funzionante.
-2. **In corso:** definire i tipi fondamentali del dominio e il test runner. Vitest, `Hsl` e `HslNormalizer` sono presenti; gli altri tipi vengono introdotti solo insieme ai contratti che li richiedono.
-3. **In corso:** estrarre conversioni e funzioni pure senza cambiare output. Conversioni HSL, normalizzazioni euristiche e `normHex` sono state estratte e caratterizzate.
-4. Estrarre la validazione dei colori biologici, quindi classificazione, fit, armonie e generazione.
-5. Inserire un adapter per la persistenza.
-6. Scomporre componenti e feature.
-7. Centralizzare design token e stili.
-8. Rimuovere configurazioni obsolete solo dopo il deploy sostitutivo.
+2. **In corso:** definire i tipi fondamentali del dominio insieme ai blocchi che li richiedono e mantenere Vitest come test runner.
+3. **Completato:** estrarre e caratterizzare il blocco cromatico di base, comprendente conversioni, normalizzazioni, range e validazione biologica.
+4. **Prossimo:** estrarre come singolo incremento il blocco completo del profilo cromatico, comprendente contrasto, analisi del profilo e season detection.
+5. Estrarre per blocchi coerenti fit cromatico, armonie, outfit e generazione.
+6. Inserire un adapter per la persistenza.
+7. Scomporre stato applicativo, componenti e feature.
+8. Centralizzare design token e stili.
+9. Rimuovere configurazioni obsolete solo dopo il deploy sostitutivo.
 
 ## Regola di revisione
 
-Ogni estrazione deve avere:
+Ogni blocco estratto deve avere:
 
-- comportamento caratterizzato;
-- test dei casi limite;
-- nessuna dipendenza UI nel modulo di dominio;
-- documentazione delle euristiche conservate;
-- build PWA verificata.
+* comportamento caratterizzato;
+* tipi introdotti insieme ai contratti che li richiedono;
+* test dei casi limite;
+* nessuna dipendenza UI nel dominio;
+* documentazione delle euristiche conservate;
+* nessuna modifica simultanea e non necessaria alla presentazione;
+* build PWA verificata.

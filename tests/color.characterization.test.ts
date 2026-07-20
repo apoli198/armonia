@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BIO_RANGES,
   hexToHsl,
   hslToHex,
   normBioEyes,
@@ -8,6 +9,8 @@ import {
   normBioSkin,
   normFabric,
   normHex,
+  validateBioColor,
+  type BioComponent,
   type Hsl,
   type HslNormalizer,
 } from "../src/color";
@@ -203,5 +206,93 @@ describe("HSL normalization characterization", () => {
         expect(normHex("#336699", normalize)).toBe(expected);
       },
     );
+  });
+});
+
+describe("biological color validation characterization", () => {
+  it("preserves the current heuristic HSL ranges", () => {
+    expect(BIO_RANGES).toEqual({
+      skin: {
+        h: { min: 0, max: 70 },
+        l: { min: 20, max: 88 },
+        s: { min: 2, max: 38 },
+      },
+      hair: {
+        h: { min: 0, max: 90 },
+        l: { min: 5, max: 82 },
+        s: { min: 5, max: 55 },
+      },
+      eyes: {
+        h: { min: 0, max: 360 },
+        l: { min: 15, max: 72 },
+        s: { min: 3, max: 72 },
+      },
+    });
+  });
+
+  it.each([
+    ["skin", "#8b7355"],
+    ["eyes", "#6b4423"],
+    ["hair", "#3d2b1f"],
+  ] satisfies Array<[BioComponent, string]>)(
+    "accepts a representative raw %s color",
+    (component, hex) => {
+      expect(validateBioColor(hex, component)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["skin", "#336699"],
+    ["eyes", "#808080"],
+    ["hair", "#336699"],
+  ] satisfies Array<[BioComponent, string]>)(
+    "rejects a representative raw color outside the %s range",
+    (component, hex) => {
+      expect(validateBioColor(hex, component)).toBe(false);
+    },
+  );
+
+  it.each([
+    ["skin", [0, 2, 20], [70, 38, 88]],
+    ["eyes", [0, 3, 15], [360, 72, 72]],
+    ["hair", [0, 5, 5], [90, 55, 82]],
+  ] satisfies Array<[BioComponent, Hsl, Hsl]>)(
+    "includes both boundaries of the %s range",
+    (component, minimum, maximum) => {
+      expect(
+        validateBioColor(
+          "#000000",
+          component,
+          () => minimum,
+        ),
+      ).toBe(true);
+
+      expect(
+        validateBioColor(
+          "#000000",
+          component,
+          () => maximum,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("applies the optional normalizer before validation", () => {
+    const normalizedInRange: HslNormalizer = () => [30, 10, 30];
+
+    expect(validateBioColor("#ffffff", "skin")).toBe(false);
+
+    expect(
+      validateBioColor(
+        "#ffffff",
+        "skin",
+        normalizedInRange,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for an unknown component at runtime", () => {
+    // @ts-expect-error The public type is intentionally finite.
+    expect(validateBioColor("#8b7355", "unknown")).toBe(false);
   });
 });

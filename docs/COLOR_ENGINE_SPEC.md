@@ -45,6 +45,24 @@ Parametri correnti:
 
 Stato: **euristica non calibrata**. Non esiste nel repository un dataset che giustifichi tali curve o range.
 
+### Validazione biologica
+
+La baseline definisce range HSL distinti per pelle, occhi e capelli:
+
+| Componente | Hue | Saturazione | Lightness |
+|---|---:|---:|---:|
+| Pelle | 0–70 | 2–38 | 20–88 |
+| Occhi | 0–360 | 3–72 | 15–72 |
+| Capelli | 0–90 | 5–55 | 5–82 |
+
+I limiti sono inclusivi. `validateBioColor` può applicare una funzione di normalizzazione prima del confronto con i range.
+
+Il tipo `BioComponent` limita il contratto TypeScript a `skin`, `eyes` e `hair`. Un valore sconosciuto ricevuto a runtime restituisce `false`.
+
+La funzione è disponibile nel dominio e coperta da test, ma non è ancora collegata alla UI.
+
+Stato: **euristica non validata**. I range non derivano attualmente da misure strumentali, dataset annotati o fonti primarie.
+
 ### Analisi del profilo
 
 Il profilo produce tre categorie:
@@ -53,17 +71,22 @@ Il profilo produce tre categorie:
 - `depth`: light, deep;
 - `intensity`: low, medium, high.
 
-La baseline combina HSL normalizzato di pelle, occhi e capelli con pesi e soglie manuali. I riflessi selezionati dall'utente aggiungono correzioni discrete.
+La baseline combina HSL normalizzato di pelle, occhi e capelli con pesi, soglie e correzioni manuali. I riflessi selezionati dall'utente applicano correzioni discrete la cui influenza varia in funzione della distanza dalle soglie di classificazione.
 
-Esempi di parametri correnti:
+Parametri correnti:
 
-- peso sottotono: pelle 60%, occhi 25%, capelli 15%;
+- il contributo dei capelli al sottotono è dinamico e dipende da riflettività stimata e volume;
+- il peso massimo dei capelli è `0.50`;
+- il peso della pelle è `0.50 - hairW * 0.30`;
+- il peso degli occhi è `0.15`;
+- il risultato del sottotono viene diviso per la somma dei pesi effettivi;
 - soglia warm: `utScore > 0.12`;
 - soglia cool: `utScore < -0.18`;
-- depth: combinazione di lightness 55% pelle, 35% capelli, 10% occhi;
+- depth: combinazione di lightness 55% pelle, 35% capelli e 10% occhi;
 - soglia deep: `depthScore > 48`;
-- intensità alta: `intScore > 32`;
-- intensità bassa: `intScore < 16`.
+- intensità: 50% occhi, 30% capelli e 20% pelle, con bonus di contrasto pari al 15% del valore normalizzato;
+- intensità alta: `intScore > 55`;
+- intensità bassa: `intScore < 30`.
 
 Stato: **euristica non validata**.
 
@@ -77,8 +100,8 @@ Stato: **modello di prodotto non validato**. Non è stata identificata nel repos
 
 Quando non esistono capi fissi, l'ancora biologica usa una media circolare delle hue:
 
-- pelle 60%;
-- capelli 30%;
+- pelle 50%;
+- capelli 40%;
 - occhi 10%.
 
 La generazione può inoltre scegliere un'ancora da un set manuale per stagione.
@@ -227,7 +250,7 @@ input
 |---|---|---|
 | H-01 | Curve fisse HSL possono correggere screen-to-fabric e screen-to-biology | non supportata |
 | H-02 | Pelle, occhi e capelli determinano in modo stabile tre assi discreti | non supportata |
-| H-03 | I pesi 60/25/15 e 60/30/10 migliorano la previsione | arbitraria |
+| H-03 | I pesi dinamici del profilo e i pesi 50/40/10 dell'anchor biologico migliorano la previsione | arbitraria |
 | H-04 | La mappa 3 assi → 12 stagioni riflette un target osservabile | non validata |
 | H-05 | Le attuali soglie di fit predicono preferenza o compatibilità | non validata |
 | H-06 | Le rotazioni HSL producono combinazioni percepite come armoniose | parzialmente plausibile, implementazione non validata |

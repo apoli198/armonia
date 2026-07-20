@@ -16,23 +16,6 @@ function contrastColor(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 145 ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.95)";
 }
 
-// ─── Bio-plausible HSL ranges ─────────────────────────────────────────────────
-const BIO_RANGES = {
-  skin: { h: { min: 0, max: 70 }, l: { min: 20, max: 88 }, s: { min: 2, max: 38 } },
-  hair: { h: { min: 0, max: 90 }, l: { min: 5,  max: 82 }, s: { min: 5, max: 55 } },
-  eyes: { h: { min: 0, max: 360 }, l: { min: 15, max: 72 }, s: { min: 3, max: 72 } },
-};
-
-function validateBioColor(hex, component, normFn) {
-  const [h, s, l] = hexToHsl(hex);
-  const [hn, sn, ln] = normFn ? normFn(h, s, l) : [h, s, l];
-  const ranges = BIO_RANGES[component];
-  if (!ranges) return false;
-  return hn >= ranges.h.min && hn <= ranges.h.max &&
-    sn >= ranges.s.min && sn <= ranges.s.max &&
-    ln >= ranges.l.min && ln <= ranges.l.max;
-}
-
 // ─── Garment weights ──────────────────────────────────────────────────────────
 const GARMENT_BASE_WEIGHTS = { cappello: 30, giubbotto: 32, pantalone: 30, felpa: 28, maglia: 25, scarpe: 12, cintura: 5, calzini: 4 };
 

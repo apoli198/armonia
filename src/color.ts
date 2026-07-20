@@ -10,6 +10,44 @@ export type HslNormalizer = (
   lightnessPercent: number
 ) => Hsl;
 
+export type BioComponent = "skin" | "eyes" | "hair";
+
+type ChannelRange = Readonly<{
+  min: number;
+  max: number;
+}>;
+
+type BioColorRange = Readonly<{
+  h: ChannelRange;
+  s: ChannelRange;
+  l: ChannelRange;
+}>;
+
+
+/**
+ * Intervalli HSL euristici usati dalla baseline corrente.
+ *
+ * Questi valori non sono stati validati sperimentalmente e non devono essere
+ * interpretati come intervalli biologici scientificamente dimostrati.
+ */
+export const BIO_RANGES = {
+  skin: {
+    h: { min: 0, max: 70},
+    l: { min: 20, max: 88},
+    s: { min: 2, max: 38},
+  },
+  eyes: {
+    h: { min: 0, max: 360},
+    l: { min: 15, max: 72},
+    s: { min: 3, max: 72},
+  },
+  hair: {
+    h: { min: 0, max: 90},
+    l: { min: 5, max: 82},
+    s: { min: 5, max: 55},
+  },
+} as const satisfies Readonly<Record<BioComponent, BioColorRange>>;
+
 
 function _sigL(
   lightnessPercent: number,
@@ -170,6 +208,35 @@ export function normBioHair(
     _powS(saturationPercent, 1.3, 55),
     _sigL(lightnessPercent, 5, 82, 5),
   ];
+}
+
+export function validateBioColor(
+  hex: string,
+  component: BioComponent,
+  normalize?: HslNormalizer,
+): boolean {
+  const [h, s, l] = hexToHsl(hex);
+
+  const normalizedHsl: Hsl = normalize
+    ? normalize(h, s, l)
+    : [h, s, l];
+
+  const [normalizedH, normalizedS, normalizedL] = normalizedHsl;
+  const ranges = BIO_RANGES[component];
+
+  // Mantiene il fallback runtime delle precedente implementazione JavaScript.
+  if (!ranges) {
+    return false;
+  }
+
+  return (
+    normalizedH >= ranges.h.min
+    && normalizedH <= ranges.h.max
+    && normalizedS >= ranges.s.min
+    && normalizedS <= ranges.s.max
+    && normalizedL >= ranges.l.min
+    && normalizedL <= ranges.l.max
+  );
 }
 
 export function normHex(
