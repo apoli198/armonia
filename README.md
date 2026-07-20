@@ -24,9 +24,9 @@ Il progetto è in una fase di ristrutturazione. Le priorità attuali sono:
 - Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
 - Selezione manuale dei colori e campionamento da immagine.
 
-La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Le conversioni pure tra colore esadecimale e HSL sono state estratte in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
+La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Le conversioni tra colore esadecimale e HSL e le normalizzazioni euristiche per tessuto, pelle, occhi e capelli sono state estratte in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
 
-I relativi test di caratterizzazione sono eseguiti con Vitest. Questi test preservano il comportamento della baseline durante la migrazione, ma non costituiscono una validazione scientifica del modello HSL o del motore cromatico.
+I relativi test di caratterizzazione sono eseguiti con Vitest e coprono conversioni, round trip, normalizzazione della hue, clamp, curve di normalizzazione e casi fuori dagli intervalli nominali. Questi test preservano il comportamento della baseline durante la migrazione, ma non costituiscono una validazione scientifica del modello HSL o delle curve euristiche.
 
 Il resto del motore, la persistenza e la maggior parte della UI restano temporaneamente in JavaScript/JSX. Linting e CI non sono ancora presenti.
 
@@ -88,4 +88,4 @@ La repository è pensata anche come progetto portfolio. Dataset proprietari, cre
 
 ## Licenza
 
-Licenza non ancora definita. Non aggiungere una licenza senza una decisione esplicita registrata in `docs/DECISIONS.md`.
+Licenza non ancora definita.

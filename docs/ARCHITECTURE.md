@@ -4,7 +4,11 @@
 
 L'applicazione è un client React/Vite interamente locale. `src/App.jsx` concentra ancora la maggior parte del dominio, dello stato, della persistenza e della presentazione.
 
-Le conversioni pure `hexToHsl` e `hslToHex` sono state estratte in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React. I relativi test di caratterizzazione sono contenuti in `tests/color.characterization.test.ts`.
+Le conversioni pure `hexToHsl` e `hslToHex`, le normalizzazioni euristiche per tessuto e componenti biologici e la funzione `normHex` sono state estratte in `src/color.ts`. Il modulo è scritto in TypeScript e non dipende da React, DOM, stato applicativo o persistenza.
+
+Gli helper matematici `_sigL` e `_powS` restano privati al modulo. L'interfaccia pubblica espone i tipi `Hsl` e `HslNormalizer` insieme alle funzioni utilizzate dall'applicazione.
+
+I test di caratterizzazione sono mantenuti nel singolo file `tests/color.characterization.test.ts`. Coprono il comportamento corrente delle conversioni e delle normalizzazioni, inclusi alcuni comportamenti fuori dagli intervalli nominali, senza attribuire validità scientifica alle curve.
 
 La struttura è mantenuta intenzionalmente minima: non vengono create cartelle, moduli di re-export o file di tipi separati finché la complessità effettiva non li rende necessari.
 
@@ -159,9 +163,9 @@ La scelta tra wrapper web, Capacitor o implementazione più nativa deve essere e
 ## Sequenza di migrazione
 
 1. **Completato:** aggiungere TypeScript mantenendo l'entrypoint React funzionante.
-2. **In corso:** definire i tipi fondamentali del dominio e il test runner. Vitest e il tipo `Hsl` sono presenti; gli altri tipi saranno introdotti insieme ai moduli che li richiedono.
-3. **In corso:** estrarre conversioni e funzioni pure senza cambiare output. `hexToHsl` e `hslToHex` sono state estratte e caratterizzate.
-4. Estrarre classificazione, fit, armonie e generazione.
+2. **In corso:** definire i tipi fondamentali del dominio e il test runner. Vitest, `Hsl` e `HslNormalizer` sono presenti; gli altri tipi vengono introdotti solo insieme ai contratti che li richiedono.
+3. **In corso:** estrarre conversioni e funzioni pure senza cambiare output. Conversioni HSL, normalizzazioni euristiche e `normHex` sono state estratte e caratterizzate.
+4. Estrarre la validazione dei colori biologici, quindi classificazione, fit, armonie e generazione.
 5. Inserire un adapter per la persistenza.
 6. Scomporre componenti e feature.
 7. Centralizzare design token e stili.

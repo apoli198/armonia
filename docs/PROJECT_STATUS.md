@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 19 luglio 2026.
+Ultimo aggiornamento: 20 luglio 2026.
 
 ## Identità
 
@@ -15,13 +15,13 @@ Ultimo aggiornamento: 19 luglio 2026.
 |---|---|
 | Framework | React 18.3.1 |
 | Build tool | Vite 5.4.x |
-| Linguaggio | JavaScript/JSX con bootstrap e configurazione TypeScript |
+| Linguaggio | JavaScript/JSX con migrazione progressiva a TypeScript |
 | PWA | `vite-plugin-pwa` 0.20.x |
 | Icone UI | `lucide-react` |
 | Persistenza | `localStorage` |
 | Hosting | configurazione Netlify presente |
-| Test automatici | Vitest 3.2.7; primi test di caratterizzazione presenti |
-| TypeScript | migrazione graduale con `allowJs`; primo modulo cromatico estratto |
+| Test automatici | Vitest 3.2.7; 41 test di caratterizzazione su conversioni e normalizzazioni |
+| TypeScript | migrazione graduale con `allowJs`; conversioni e normalizzazioni cromatiche estratte |
 | Type-check | disponibile tramite `npm run typecheck` |
 | Test | disponibili tramite `npm test` |
 | Lockfile | `package-lock.json` presente |
@@ -30,12 +30,14 @@ Ultimo aggiornamento: 19 luglio 2026.
 | Backend | assente |
 | Account/sincronizzazione | assenti |
 
-L'installazione riproducibile, il type-check e la build di produzione sono stati verificati il 18 luglio 2026 con `npm ci`, `npm run typecheck` e `npm run build`. `npm audit --omit=dev` non ha rilevato vulnerabilità nelle dipendenze distribuite in produzione. L'audit completo segnala tre vulnerabilità nella toolchain di sviluppo, due moderate e una alta; la correzione automatica proposta richiede aggiornamenti major non inclusi in questo incremento. Il repository contiene ora `package-lock.json`.
+L'installazione riproducibile, il type-check e la build di produzione sono stati verificati il 18 luglio 2026 con `npm ci`, `npm run typecheck` e `npm run build`. `npm audit --omit=dev` non ha rilevato vulnerabilità nelle dipendenze distribuite in produzione. L'audit completo segnala tre vulnerabilità nella toolchain di sviluppo, due moderate e una alta; la correzione automatica proposta richiede aggiornamenti major non inclusi in questo incremento. Il repository contiene `package-lock.json`.
+
 Il 19 luglio 2026 sono stati verificati localmente `npm test`, `npm run typecheck` e `npm run build` dopo l'introduzione di Vitest e l'estrazione delle conversioni cromatiche. I test introdotti sono test di caratterizzazione: documentano il comportamento corrente, ma non dimostrano la correttezza scientifica delle formule.
+
+Il 20 luglio 2026 sono stati verificati localmente `npm test`, `npm run typecheck` e `npm run build` dopo l'estrazione delle normalizzazioni HSL. La verifica comprende 41 test di caratterizzazione. Le curve, i parametri e i comportamenti fuori dagli intervalli nominali sono stati preservati senza correzioni scientifiche intenzionali.
 
 ## Struttura corrente
 
-```text
 ```text
 src/
   App.jsx
@@ -56,13 +58,13 @@ vite.config.ts
 netlify.toml
 ```
 
-`src/color.ts` contiene le conversioni pure `hexToHsl` e `hslToHex`, tipizzate tramite la tupla `Hsl` e indipendenti da React, DOM, stato e persistenza.
+`src/color.ts` contiene le conversioni pure `hexToHsl` e `hslToHex`, le normalizzazioni euristiche `normFabric`, `normBioSkin`, `normBioEyes` e `normBioHair` e l'orchestrazione `normHex`. Il modulo usa i tipi `Hsl` e `HslNormalizer` ed è indipendente da React, DOM, stato e persistenza.
 
-`tests/color.characterization.test.ts` verifica colori canonici, casi acromatici, normalizzazione e clamp dei valori HSL e round trip rappresentativi.
+`tests/color.characterization.test.ts` verifica colori canonici, casi acromatici, round trip, normalizzazione della hue, clamp delle conversioni, curve euristiche, valori fuori dagli intervalli nominali e output esadecimali normalizzati.
 
 La maggior parte dell'applicazione resta concentrata in `src/App.jsx`, che contiene:
 
-- normalizzazioni euristiche;
+- validazione dei colori biologici;
 - classificazione del profilo;
 - season detection;
 - valutazione del fit;
@@ -99,7 +101,7 @@ La maggior parte dell'applicazione resta concentrata in `src/App.jsx`, che conti
 
 ### Tecnici
 
-- Elevato accoppiamento residuo in `src/App.jsx`, nonostante la prima estrazione delle conversioni pure.
+- Elevato accoppiamento residuo in `src/App.jsx`, nonostante l'estrazione delle conversioni e delle normalizzazioni pure.
 - Il bootstrap, la configurazione e `src/color.ts` sono tipizzati, ma il resto del dominio cromatico, la persistenza e i dati salvati restano non tipizzati e privi di validazione runtime.
 - Generazione basata anche su `Date.now()`, quindi non completamente riproducibile dall'esterno.
 - Dipendenza specifica da Netlify nella configurazione di deploy.
@@ -111,23 +113,27 @@ La maggior parte dell'applicazione resta concentrata in `src/App.jsx`, che conti
 - L'interfaccia può suggerire una precisione superiore a quella realmente dimostrata.
 - Nessuna infrastruttura per analytics, consenso o pubblicità.
 
-## Incremento completato
+## Incrementi completati
 
 - introdotto Vitest 3.2.7 senza configurazione separata;
 - aggiunto il comando `npm test`;
-- definita la tupla TypeScript `Hsl`;
+- definite le tuple e le firme TypeScript `Hsl` e `HslNormalizer`;
 - estratte `hexToHsl` e `hslToHex` in `src/color.ts`;
-- aggiunti test di caratterizzazione per conversioni, clamp, normalizzazione e round trip;
+- estratte nello stesso modulo `normFabric`, `normBioSkin`, `normBioEyes`, `normBioHair` e `normHex`;
+- mantenuti privati gli helper `_sigL` e `_powS`;
+- aggiunti 41 test di caratterizzazione per conversioni, clamp, round trip, curve di normalizzazione, casi fuori range e output esadecimali;
+- documentato che saturazioni superiori a 100 e lightness fuori intervallo non vengono limitate prima delle curve correnti;
 - mantenuto invariato il comportamento intenzionale dell'applicazione;
 - verificati test, type-check e build di produzione.
 
 ## Prossima attività
 
-Proseguire la separazione incrementale del dominio senza modificare le formule:
+Proseguire la separazione incrementale del dominio senza modificare le euristiche:
 
-1. caratterizzare le funzioni pure di normalizzazione HSL;
-2. estrarre tali funzioni nello stesso `src/color.ts`, finché il file resta coeso e leggibile;
-3. evitare nuove cartelle o file finché non esiste una necessità concreta;
-4. mantenere distinti test di caratterizzazione e futuri test di conformità colorimetrica.
+1. caratterizzare `BIO_RANGES` e `validateBioColor`;
+2. definire un tipo finito per i componenti biologici `skin`, `eyes` e `hair`;
+3. estrarre la validazione nello stesso `src/color.ts`, finché il modulo resta coeso e leggibile;
+4. mantenere i range correnti esplicitamente classificati come euristiche non validate;
+5. non modificare contemporaneamente range, soglie o comportamento della UI.
 
-Criterio di completamento del prossimo incremento: normalizzazioni invocabili senza React, comportamento corrente coperto da test, type-check e build positivi, nessuna regressione intenzionale nella UI.
+Criterio di completamento del prossimo incremento: validazione dei colori biologici invocabile senza React, casi limite coperti da test, input tipizzati, test, type-check e build positivi e nessuna regressione intenzionale nella UI.
