@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { hexToHsl, hslToHex } from "../src/color";
+import {
+  hexToHsl,
+  hslToHex,
+  normBioEyes,
+  normBioHair,
+  normBioSkin,
+  normFabric,
+  normHex,
+  type Hsl,
+  type HslNormalizer,
+} from "../src/color";
+
+function expectHslCloseTo(actual: Hsl, expected: Hsl): void {
+  expect(actual[0]).toBeCloseTo(expected[0], 10);
+  expect(actual[1]).toBeCloseTo(expected[1], 10);
+  expect(actual[2]).toBeCloseTo(expected[2], 10);
+}
 
 describe("color conversion characterization", () => {
   describe("hexToHsl", () => {
@@ -14,14 +30,10 @@ describe("color conversion characterization", () => {
       ["#0000ff", [240, 100, 50]],
       ["#ff00ff", [300, 100, 50]],
       ["#336699", [210, 50, 40]],
-    ] satisfies Array<[string, [number, number, number]]>)(
+    ] satisfies Array<[string, Hsl]>)(
       "preserves the current conversion for %s",
       (hex, expected) => {
-        const actual = hexToHsl(hex);
-
-        expect(actual[0]).toBeCloseTo(expected[0], 10);
-        expect(actual[1]).toBeCloseTo(expected[1], 10);
-        expect(actual[2]).toBeCloseTo(expected[2], 10);
+        expectHslCloseTo(hexToHsl(hex), expected);
       },
     );
 
@@ -43,7 +55,7 @@ describe("color conversion characterization", () => {
       [[240, 100, 50], "#0000ff"],
       [[300, 100, 50], "#ff00ff"],
       [[210, 50, 40], "#336699"],
-    ] satisfies Array<[[number, number, number], string]>)(
+    ] satisfies Array<[Hsl, string]>)(
       "preserves the current conversion for HSL %j",
       ([hue, saturation, lightness], expected) => {
         expect(hslToHex(hue, saturation, lightness)).toBe(expected);
@@ -91,5 +103,105 @@ describe("color conversion characterization", () => {
     ])("preserves %s after hex to HSL to hex conversion", (hex) => {
       expect(hslToHex(...hexToHsl(hex))).toBe(hex);
     });
+  });
+});
+
+describe("HSL normalization characterization", () => {
+  it.each([
+    [
+      "fabric",
+      normFabric,
+      [210, 0, 5],
+      [210, 25.76718163067677, 47.5],
+      [210, 68, 90],
+    ],
+    [
+      "skin",
+      normBioSkin,
+      [210, 0, 20],
+      [210, 16.54046070262636, 54],
+      [210, 38, 88],
+    ],
+    [
+      "eyes",
+      normBioEyes,
+      [210, 0, 15],
+      [210, 23.751142393912097, 43.5],
+      [210, 72, 72],
+    ],
+    [
+      "hair",
+      normBioHair,
+      [210, 0, 5],
+      [210, 22.336940899796474, 43.5],
+      [210, 55, 82],
+    ],
+  ] satisfies Array<
+    [string, HslNormalizer, Hsl, Hsl, Hsl]
+  >)(
+    "preserves the current %s normalization",
+    (
+      _name,
+      normalize,
+      expectedAtZero,
+      expectedAtMidpoint,
+      expectedAtMaximum,
+    ) => {
+      expectHslCloseTo(
+        normalize(210, 0, 0),
+        expectedAtZero,
+      );
+
+      expectHslCloseTo(
+        normalize(210, 50, 50),
+        expectedAtMidpoint,
+      );
+
+      expectHslCloseTo(
+        normalize(210, 100, 100),
+        expectedAtMaximum,
+      );
+    },
+  );
+
+  it("clamps negative saturation but not saturation above one hundred", () => {
+    const [, negativeSaturation] = normFabric(210, -20, 50);
+    const [, excessiveSaturation] = normFabric(210, 120, 50);
+
+    expect(negativeSaturation).toBe(0);
+    expect(excessiveSaturation).toBeCloseTo(
+      87.77334656569772,
+      10,
+    );
+    expect(excessiveSaturation).toBeGreaterThan(68);
+  });
+
+  it("does not clamp lightness before sigmoid normalization", () => {
+    const [, , belowRange] = normFabric(210, 50, -20);
+    const [, , aboveRange] = normFabric(210, 50, 120);
+
+    expect(belowRange).toBeCloseTo(
+      -0.6986775863707866,
+      10,
+    );
+
+    expect(aboveRange).toBeCloseTo(
+      95.69867758637078,
+      10,
+    );
+  });
+
+  describe("normHex", () => {
+    it.each([
+      ["fabric", normFabric, "#445b73"],
+      ["skin", normBioSkin, "#617488"],
+      ["eyes", normBioEyes, "#465c72"],
+      ["hair", normBioHair, "#405365"],
+    ] satisfies Array<[string, HslNormalizer, string]>)(
+      "preserves the current %s normalized hexadecimal output",
+      (_name, normalize, expected) => {
+        expect(normHex("#336699", normalize)).toBe(expected);
+      },
+    );
   });
 });

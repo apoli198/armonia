@@ -1,46 +1,19 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext, useMemo } from "react";
 import { RefreshCw, ChevronRight, User, Shirt, LayoutGrid, X, Check, Sun, Moon } from "lucide-react";
-import { hexToHsl, hslToHex } from "./color";
+import {
+  hexToHsl,
+  hslToHex,
+  normBioEyes,
+  normBioHair,
+  normBioSkin,
+  normFabric,
+  normHex,
+} from "./color";
 
 // ─── Color math ───────────────────────────────────────────────
 function contrastColor(hex) {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
   return (0.299 * r + 0.587 * g + 0.114 * b) > 145 ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.95)";
-}
-
-// ─── Screen → Real-world normalization ────────────────────────────────────────
-function _sigL(l, lMin, lMax, k = 4.5) {
-  const x = l / 100;
-  const sig  = 1 / (1 + Math.exp(-k * (x - 0.5)));
-  const sig0 = 1 / (1 + Math.exp(-k * (0   - 0.5)));
-  const sig1 = 1 / (1 + Math.exp(-k * (1   - 0.5)));
-  return lMin + (lMax - lMin) * (sig - sig0) / (sig1 - sig0);
-}
-
-function _powS(s, gamma, maxS) {
-  return Math.pow(Math.max(0, s) / 100, gamma) * maxS;
-}
-
-function normFabric(h, s, l) {
-  return [h, _powS(s, 1.4, 68), _sigL(l, 5, 90)];
-}
-
-function normBioSkin(h, s, l) {
-  return [h, _powS(s, 1.2, 38), _sigL(l, 20, 88, 3.5)];
-}
-
-function normBioEyes(h, s, l) {
-  return [h, _powS(s, 1.6, 72), _sigL(l, 15, 72, 4.0)];
-}
-
-function normBioHair(h, s, l) {
-  return [h, _powS(s, 1.3, 55), _sigL(l, 5, 82, 5.0)];
-}
-
-function normHex(hex, normFn) {
-  const [h, s, l] = hexToHsl(hex);
-  const [hn, sn, ln] = normFn(h, s, l);
-  return hslToHex(hn, sn, ln);
 }
 
 // ─── Bio-plausible HSL ranges ─────────────────────────────────────────────────
