@@ -139,9 +139,7 @@ describe("HSL normalization characterization", () => {
       [210, 22.336940899796474, 43.5],
       [210, 55, 82],
     ],
-  ] satisfies Array<
-    [string, HslNormalizer, Hsl, Hsl, Hsl]
-  >)(
+  ] satisfies Array<[string, HslNormalizer, Hsl, Hsl, Hsl]>)(
     "preserves the current %s normalization",
     (
       _name,
@@ -150,20 +148,11 @@ describe("HSL normalization characterization", () => {
       expectedAtMidpoint,
       expectedAtMaximum,
     ) => {
-      expectHslCloseTo(
-        normalize(210, 0, 0),
-        expectedAtZero,
-      );
+      expectHslCloseTo(normalize(210, 0, 0), expectedAtZero);
 
-      expectHslCloseTo(
-        normalize(210, 50, 50),
-        expectedAtMidpoint,
-      );
+      expectHslCloseTo(normalize(210, 50, 50), expectedAtMidpoint);
 
-      expectHslCloseTo(
-        normalize(210, 100, 100),
-        expectedAtMaximum,
-      );
+      expectHslCloseTo(normalize(210, 100, 100), expectedAtMaximum);
     },
   );
 
@@ -172,10 +161,7 @@ describe("HSL normalization characterization", () => {
     const [, excessiveSaturation] = normFabric(210, 120, 50);
 
     expect(negativeSaturation).toBe(0);
-    expect(excessiveSaturation).toBeCloseTo(
-      87.77334656569772,
-      10,
-    );
+    expect(excessiveSaturation).toBeCloseTo(87.77334656569772, 10);
     expect(excessiveSaturation).toBeGreaterThan(68);
   });
 
@@ -183,15 +169,9 @@ describe("HSL normalization characterization", () => {
     const [, , belowRange] = normFabric(210, 50, -20);
     const [, , aboveRange] = normFabric(210, 50, 120);
 
-    expect(belowRange).toBeCloseTo(
-      -0.6986775863707866,
-      10,
-    );
+    expect(belowRange).toBeCloseTo(-0.6986775863707866, 10);
 
-    expect(aboveRange).toBeCloseTo(
-      95.69867758637078,
-      10,
-    );
+    expect(aboveRange).toBeCloseTo(95.69867758637078, 10);
   });
 
   describe("normHex", () => {
@@ -259,21 +239,9 @@ describe("biological color validation characterization", () => {
   ] satisfies Array<[BioComponent, Hsl, Hsl]>)(
     "includes both boundaries of the %s range",
     (component, minimum, maximum) => {
-      expect(
-        validateBioColor(
-          "#000000",
-          component,
-          () => minimum,
-        ),
-      ).toBe(true);
+      expect(validateBioColor("#000000", component, () => minimum)).toBe(true);
 
-      expect(
-        validateBioColor(
-          "#000000",
-          component,
-          () => maximum,
-        ),
-      ).toBe(true);
+      expect(validateBioColor("#000000", component, () => maximum)).toBe(true);
     },
   );
 
@@ -282,13 +250,7 @@ describe("biological color validation characterization", () => {
 
     expect(validateBioColor("#ffffff", "skin")).toBe(false);
 
-    expect(
-      validateBioColor(
-        "#ffffff",
-        "skin",
-        normalizedInRange,
-      ),
-    ).toBe(true);
+    expect(validateBioColor("#ffffff", "skin", normalizedInRange)).toBe(true);
   });
 
   it("returns false for an unknown component at runtime", () => {

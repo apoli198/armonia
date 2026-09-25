@@ -7,7 +7,7 @@ export type Hsl = [
 export type HslNormalizer = (
   hueDegrees: number,
   saturationPercent: number,
-  lightnessPercent: number
+  lightnessPercent: number,
 ) => Hsl;
 
 export type BioComponent = "skin" | "eyes" | "hair";
@@ -23,7 +23,6 @@ type BioColorRange = Readonly<{
   l: ChannelRange;
 }>;
 
-
 /**
  * Intervalli HSL euristici usati dalla baseline corrente.
  *
@@ -32,22 +31,21 @@ type BioColorRange = Readonly<{
  */
 export const BIO_RANGES = {
   skin: {
-    h: { min: 0, max: 70},
-    l: { min: 20, max: 88},
-    s: { min: 2, max: 38},
+    h: { min: 0, max: 70 },
+    l: { min: 20, max: 88 },
+    s: { min: 2, max: 38 },
   },
   eyes: {
-    h: { min: 0, max: 360},
-    l: { min: 15, max: 72},
-    s: { min: 3, max: 72},
+    h: { min: 0, max: 360 },
+    l: { min: 15, max: 72 },
+    s: { min: 3, max: 72 },
   },
   hair: {
-    h: { min: 0, max: 90},
-    l: { min: 5, max: 82},
-    s: { min: 5, max: 55},
+    h: { min: 0, max: 90 },
+    l: { min: 5, max: 82 },
+    s: { min: 5, max: 55 },
   },
 } as const satisfies Readonly<Record<BioComponent, BioColorRange>>;
-
 
 function _sigL(
   lightnessPercent: number,
@@ -62,10 +60,8 @@ function _sigL(
   const sig1 = 1 / (1 + Math.exp(-k * (1 - 0.5)));
 
   return (
-    minimumLightness
-   + (maximumLightness - minimumLightness)
-   * (sig - sig0)
-   / (sig1 - sig0)
+    minimumLightness +
+    ((maximumLightness - minimumLightness) * (sig - sig0)) / (sig1 - sig0)
   );
 }
 
@@ -75,11 +71,9 @@ function _powS(
   maximumSaturation: number,
 ): number {
   return (
-    Math.pow(Math.max(0, saturationPercent / 100), gamma)
-    * maximumSaturation
+    Math.pow(Math.max(0, saturationPercent / 100), gamma) * maximumSaturation
   );
 }
-
 
 export function hexToHsl(hex: string): Hsl {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -96,9 +90,7 @@ export function hexToHsl(hex: string): Hsl {
   if (max !== min) {
     const d = max - min;
 
-    s = l > 0.5
-      ? d / (2 - max - min)
-      : d / (max + min);
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
 
     switch (max) {
       case r:
@@ -119,14 +111,14 @@ export function hexToHsl(hex: string): Hsl {
 export function hslToHex(
   hueDegrees: number,
   saturationPercent: number,
-  lightnessPercent: number
+  lightnessPercent: number,
 ): string {
-  const h = ((hueDegrees % 360) + 360) %360;
+  const h = ((hueDegrees % 360) + 360) % 360;
   const s = Math.min(100, Math.max(0, saturationPercent)) / 100;
   const l = Math.min(100, Math.max(0, lightnessPercent)) / 100;
 
   const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
 
   let r = 0;
@@ -156,7 +148,7 @@ export function hslToHex(
   const channels = [r, g, b].map((value) =>
     Math.round((value + m) * 255)
       .toString(16)
-      .padStart(2, '0')
+      .padStart(2, "0"),
   );
 
   return `#${channels.join("")}`;
@@ -165,7 +157,7 @@ export function hslToHex(
 export function normFabric(
   hueDegrees: number,
   saturationPercent: number,
-  lightnessPercent: number
+  lightnessPercent: number,
 ): Hsl {
   return [
     hueDegrees,
@@ -217,9 +209,7 @@ export function validateBioColor(
 ): boolean {
   const [h, s, l] = hexToHsl(hex);
 
-  const normalizedHsl: Hsl = normalize
-    ? normalize(h, s, l)
-    : [h, s, l];
+  const normalizedHsl: Hsl = normalize ? normalize(h, s, l) : [h, s, l];
 
   const [normalizedH, normalizedS, normalizedL] = normalizedHsl;
   const ranges = BIO_RANGES[component];
@@ -230,19 +220,16 @@ export function validateBioColor(
   }
 
   return (
-    normalizedH >= ranges.h.min
-    && normalizedH <= ranges.h.max
-    && normalizedS >= ranges.s.min
-    && normalizedS <= ranges.s.max
-    && normalizedL >= ranges.l.min
-    && normalizedL <= ranges.l.max
+    normalizedH >= ranges.h.min &&
+    normalizedH <= ranges.h.max &&
+    normalizedS >= ranges.s.min &&
+    normalizedS <= ranges.s.max &&
+    normalizedL >= ranges.l.min &&
+    normalizedL <= ranges.l.max
   );
 }
 
-export function normHex(
-  hex: string,
-  normalize: HslNormalizer,
-): string {
+export function normHex(hex: string, normalize: HslNormalizer): string {
   const [h, s, l] = hexToHsl(hex);
   const [normalizedH, normalizedS, normalizedL] = normalize(h, s, l);
 
