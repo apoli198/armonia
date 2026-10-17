@@ -41,14 +41,14 @@ Per ogni nuova fonte annotare quale decisione o ipotesi può supportare e quali 
 
 ### Sharma, Wu, Dalal (2005) — CIEDE2000
 
-- Titolo: *The CIEDE2000 Color-Difference Formula: Implementation Notes, Supplementary Test Data, and Mathematical Observations*.
+- Titolo: _The CIEDE2000 Color-Difference Formula: Implementation Notes, Supplementary Test Data, and Mathematical Observations_.
 - DOI: https://doi.org/10.1002/col.20070
 - Uso previsto: implementazione e test di ΔE00.
 - Rilevanza: test standardizzati per differenze cromatiche.
 
 ### Li et al. (2017) — CAM16, CAT16, CAM16-UCS
 
-- Titolo: *Comprehensive color solutions: CAM16, CAT16, and CAM16-UCS*.
+- Titolo: _Comprehensive color solutions: CAM16, CAT16, and CAM16-UCS_.
 - DOI: https://doi.org/10.1002/col.22131
 - Uso previsto: apparenza del colore e spazio uniforme sotto condizioni di visione specificate.
 - Rilevanza: candidato da confrontare con CIELAB/ΔE00 per scoring e ranking.
@@ -57,7 +57,7 @@ Per ogni nuova fonte annotare quale decisione o ipotesi può supportare e quali 
 
 ### Xiao et al. (2017)
 
-- Titolo: *Characterising the variations in ethnic skin colours: a new calibrated data base for human skin*.
+- Titolo: _Characterising the variations in ethnic skin colours: a new calibrated data base for human skin_.
 - DOI: https://doi.org/10.1111/srt.12295
 - Metodo: misure spettrofotometriche su quattro gruppi etnici e quattro aree corporee, espresse in CIELAB.
 - Rilevanza: range biologici e variabilità tra gruppi e aree.
@@ -65,14 +65,14 @@ Per ogni nuova fonte annotare quale decisione o ipotesi può supportare e quali 
 
 ### Wang et al. (2017)
 
-- Titolo: *Spectrophotometric Measurement of Human Skin Colour*.
+- Titolo: _Spectrophotometric Measurement of Human Skin Colour_.
 - DOI: https://doi.org/10.1002/col.22143
 - Copia istituzionale: https://eprints.whiterose.ac.uk/116965/
 - Rilevanza: variabilità della misura per strumenti, gruppi, genere e aree anatomiche.
 
 ### Cronin et al. (2023)
 
-- Titolo: *Effect of camera distance and angle on color of diverse skin tone-based standards in smartphone photos*.
+- Titolo: _Effect of camera distance and angle on color of diverse skin tone-based standards in smartphone photos_.
 - DOI: https://doi.org/10.1002/jbio.202200381
 - Rilevanza: dimostra che geometria e acquisizione smartphone influenzano coordinate CIELAB anche usando standard colore.
 - Limite: standard di tono cutaneo, non misura diretta del comportamento dell'app Armonia.
@@ -81,7 +81,7 @@ Per ogni nuova fonte annotare quale decisione o ipotesi può supportare e quali 
 
 ### Ou e Luo (2006)
 
-- Titolo: *A colour harmony model for two-colour combinations*.
+- Titolo: _A colour harmony model for two-colour combinations_.
 - DOI: https://doi.org/10.1002/col.20208
 - Metodo: valutazione psicofisica di 1.431 coppie costruite in CIELAB e validazione su un dataset indipendente.
 - Rilevanza: baseline empirica per sostituire parte delle regole manuali sulle coppie.
@@ -89,7 +89,7 @@ Per ogni nuova fonte annotare quale decisione o ipotesi può supportare e quali 
 
 ### Zhang et al. (2026)
 
-- Titolo: *The impact of clothing colour on skin tone perception and consumer preference*.
+- Titolo: _The impact of clothing colour on skin tone perception and consumer preference_.
 - DOI: https://doi.org/10.1111/cote.12828
 - Metodo: osservazione di 22 felpe monocromatiche e modelli per percezione della fairness e preferenza in giovani consumatori cinesi.
 - Rilevanza: prova che il colore dell'abbigliamento può modificare la percezione del tono della pelle e che preferenza e percezione non coincidono.

@@ -4,10 +4,10 @@ Ultimo aggiornamento: 20 luglio 2026.
 
 ## Identità
 
-* Nome corrente: **Armonia**.
-* Codice e metadati principali allineati al nome **Armonia**.
-* Repository canonica: https://github.com/apoli198/armonia
-* Strategia: web app/PWA prima, store successivamente.
+- Nome corrente: **Armonia**.
+- Codice e metadati principali allineati al nome **Armonia**.
+- Repository canonica: https://github.com/apoli198/armonia
+- Strategia: web app/PWA prima, store successivamente.
 
 ## Baseline tecnica verificata
 
@@ -62,98 +62,98 @@ netlify.toml
 
 `src/color.ts` contiene:
 
-* i tipi `Hsl` e `HslNormalizer`;
-* il tipo finito `BioComponent`;
-* le conversioni pure `hexToHsl` e `hslToHex`;
-* le normalizzazioni euristiche `normFabric`, `normBioSkin`, `normBioEyes` e `normBioHair`;
-* l'orchestrazione `normHex`;
-* i range euristici `BIO_RANGES`;
-* la funzione `validateBioColor`.
+- i tipi `Hsl` e `HslNormalizer`;
+- il tipo finito `BioComponent`;
+- le conversioni pure `hexToHsl` e `hslToHex`;
+- le normalizzazioni euristiche `normFabric`, `normBioSkin`, `normBioEyes` e `normBioHair`;
+- l'orchestrazione `normHex`;
+- i range euristici `BIO_RANGES`;
+- la funzione `validateBioColor`.
 
 Il modulo è indipendente da React, DOM, stato applicativo e persistenza.
 
 `tests/color.characterization.test.ts` verifica:
 
-* colori canonici e casi acromatici;
-* conversioni e round trip;
-* normalizzazione e clamp dei valori HSL;
-* curve euristiche;
-* valori fuori dagli intervalli nominali;
-* output esadecimali normalizzati;
-* contenuto dei range biologici;
-* inclusività dei limiti;
-* applicazione opzionale della normalizzazione;
-* fallback runtime per componenti sconosciuti.
+- colori canonici e casi acromatici;
+- conversioni e round trip;
+- normalizzazione e clamp dei valori HSL;
+- curve euristiche;
+- valori fuori dagli intervalli nominali;
+- output esadecimali normalizzati;
+- contenuto dei range biologici;
+- inclusività dei limiti;
+- applicazione opzionale della normalizzazione;
+- fallback runtime per componenti sconosciuti.
 
 La maggior parte dell'applicazione resta concentrata in `src/App.jsx`, che contiene:
 
-* classificazione del contrasto;
-* analisi del profilo;
-* season detection;
-* valutazione del fit;
-* generazione delle armonie;
-* pesi dei capi;
-* persistenza;
-* tema;
-* componenti e schermate.
+- classificazione del contrasto;
+- analisi del profilo;
+- season detection;
+- valutazione del fit;
+- generazione delle armonie;
+- pesi dei capi;
+- persistenza;
+- tema;
+- componenti e schermate.
 
 ## Funzioni disponibili
 
-* selezione di colore per pelle, occhi e capelli;
-* campionamento di un colore da immagine caricata;
-* indicazione manuale di riflessi e sottotono;
-* classificazione in un modello a 12 stagioni;
-* configurazione dei capi come automatici, fissi o esclusi;
-* gestione di colori secondari, pattern e materiali;
-* generazione di combinazioni monocromatiche, analoghe, complementari, split, triadiche, tetradiche, neutre, earth, pastello e deep;
-* valutazione euristica “fuori palette” e “combo errata”;
-* salvataggio locale delle preferenze;
-* modalità chiara e scura;
-* installabilità PWA e cache offline.
+- selezione di colore per pelle, occhi e capelli;
+- campionamento di un colore da immagine caricata;
+- indicazione manuale di riflessi e sottotono;
+- classificazione in un modello a 12 stagioni;
+- configurazione dei capi come automatici, fissi o esclusi;
+- gestione di colori secondari, pattern e materiali;
+- generazione di combinazioni monocromatiche, analoghe, complementari, split, triadiche, tetradiche, neutre, earth, pastello e deep;
+- valutazione euristica “fuori palette” e “combo errata”;
+- salvataggio locale delle preferenze;
+- modalità chiara e scura;
+- installabilità PWA e cache offline.
 
 ## Rischi principali
 
 ### Scientifici
 
-* Il motore usa HSL, che non è uno spazio percettivamente uniforme.
-* Le trasformazioni “screen to real-world” sono curve costruite manualmente e non calibrate su misure.
-* Soglie, pesi e range biologici non sono associati a dataset o fonti.
-* La classificazione stagionale è deterministica ma non restituisce confidenza o alternative vicine.
-* Il campionamento fotografico non controlla illuminazione, bilanciamento del bianco, camera, esposizione o profilo colore.
-* Le regole di armonia implementate non derivano attualmente da un modello psicofisico validato.
+- Il motore usa HSL, che non è uno spazio percettivamente uniforme.
+- Le trasformazioni “screen to real-world” sono curve costruite manualmente e non calibrate su misure.
+- Soglie, pesi e range biologici non sono associati a dataset o fonti.
+- La classificazione stagionale è deterministica ma non restituisce confidenza o alternative vicine.
+- Il campionamento fotografico non controlla illuminazione, bilanciamento del bianco, camera, esposizione o profilo colore.
+- Le regole di armonia implementate non derivano attualmente da un modello psicofisico validato.
 
 ### Tecnici
 
-* Elevato accoppiamento residuo in `src/App.jsx`, nonostante il completamento del primo blocco TypeScript del dominio.
-* Il bootstrap, la configurazione e `src/color.ts` sono tipizzati, ma il resto del dominio cromatico, la persistenza e i dati salvati restano non tipizzati e privi di validazione runtime.
-* `validateBioColor` è disponibile e testata, ma non è attualmente collegata alla UI.
-* La UI usa in alcuni punti la chiave `eye`, mentre il contratto del dominio usa `eyes`; la corrispondenza dovrà essere gestita esplicitamente prima dell'integrazione.
-* Le stringhe esadecimali non vengono ancora validate a runtime prima della conversione.
-* La generazione è basata anche su `Date.now()`, quindi non è completamente riproducibile dall'esterno.
-* È presente una dipendenza specifica da Netlify nella configurazione di deploy.
-* Gli stili sono prevalentemente inline e difficili da governare come design system.
+- Elevato accoppiamento residuo in `src/App.jsx`, nonostante il completamento del primo blocco TypeScript del dominio.
+- Il bootstrap, la configurazione e `src/color.ts` sono tipizzati, ma il resto del dominio cromatico, la persistenza e i dati salvati restano non tipizzati e privi di validazione runtime.
+- `validateBioColor` è disponibile e testata, ma non è attualmente collegata alla UI.
+- La UI usa in alcuni punti la chiave `eye`, mentre il contratto del dominio usa `eyes`; la corrispondenza dovrà essere gestita esplicitamente prima dell'integrazione.
+- Le stringhe esadecimali non vengono ancora validate a runtime prima della conversione.
+- La generazione è basata anche su `Date.now()`, quindi non è completamente riproducibile dall'esterno.
+- È presente una dipendenza specifica da Netlify nella configurazione di deploy.
+- Gli stili sono prevalentemente inline e difficili da governare come design system.
 
 ### Prodotto
 
-* Primo avvio già operativo, ma senza percorso guidato o spiegazione dell'incertezza.
-* L'interfaccia può suggerire una precisione superiore a quella realmente dimostrata.
-* Nessuna infrastruttura per analytics, consenso o pubblicità.
+- Primo avvio già operativo, ma senza percorso guidato o spiegazione dell'incertezza.
+- L'interfaccia può suggerire una precisione superiore a quella realmente dimostrata.
+- Nessuna infrastruttura per analytics, consenso o pubblicità.
 
 ## Incrementi completati
 
-* introdotto Vitest 3.2.7 senza configurazione separata;
-* aggiunto il comando `npm test`;
-* definiti i tipi `Hsl`, `HslNormalizer` e `BioComponent`;
-* estratte `hexToHsl` e `hslToHex` in `src/color.ts`;
-* estratte `normFabric`, `normBioSkin`, `normBioEyes`, `normBioHair` e `normHex`;
-* mantenuti privati gli helper `_sigL` e `_powS`;
-* estratti e tipizzati i range euristici `BIO_RANGES`;
-* estratta e tipizzata `validateBioColor`;
-* documentata esplicitamente la natura euristica e non validata dei range biologici;
-* aggiunti 53 test di caratterizzazione;
-* caratterizzati limiti inclusivi, normalizzazione opzionale e fallback runtime;
-* mantenuto invariato il comportamento intenzionale dell'applicazione;
-* verificati test, type-check e build di produzione.
+- introdotto Vitest 3.2.7 senza configurazione separata;
+- aggiunto il comando `npm test`;
+- definiti i tipi `Hsl`, `HslNormalizer` e `BioComponent`;
+- estratte `hexToHsl` e `hslToHex` in `src/color.ts`;
+- estratte `normFabric`, `normBioSkin`, `normBioEyes`, `normBioHair` e `normHex`;
+- mantenuti privati gli helper `_sigL` e `_powS`;
+- estratti e tipizzati i range euristici `BIO_RANGES`;
+- estratta e tipizzata `validateBioColor`;
+- documentata esplicitamente la natura euristica e non validata dei range biologici;
+- aggiunti 53 test di caratterizzazione;
+- caratterizzati limiti inclusivi, normalizzazione opzionale e fallback runtime;
+- mantenuto invariato il comportamento intenzionale dell'applicazione;
+- verificati test, type-check e build di produzione.
 
 ## Prossima attività
 

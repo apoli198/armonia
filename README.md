@@ -14,25 +14,25 @@ Il progetto è in una fase di ristrutturazione. Le priorità attuali sono:
 
 ## Stato attuale
 
-* React 18 e Vite 5.
-* PWA tramite `vite-plugin-pwa`.
-* Persistenza locale tramite `localStorage`.
-* Deploy configurato per Netlify.
-* Interfaccia mobile-first con modalità chiara e scura.
-* Analisi di pelle, occhi e capelli.
-* Classificazione nel modello a 12 stagioni.
-* Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
-* Selezione manuale dei colori e campionamento da immagine.
+- React 18 e Vite 5.
+- PWA tramite `vite-plugin-pwa`.
+- Persistenza locale tramite `localStorage`.
+- Deploy configurato per Netlify.
+- Interfaccia mobile-first con modalità chiara e scura.
+- Analisi di pelle, occhi e capelli.
+- Classificazione nel modello a 12 stagioni.
+- Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
+- Selezione manuale dei colori e campionamento da immagine.
 
 La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Il blocco cromatico di base è stato estratto in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
 
 Il modulo comprende:
 
-* rappresentazione HSL tipizzata;
-* conversioni tra colore esadecimale e HSL;
-* normalizzazioni euristiche per tessuto, pelle, occhi e capelli;
-* range biologici euristici;
-* validazione dei colori biologici.
+- rappresentazione HSL tipizzata;
+- conversioni tra colore esadecimale e HSL;
+- normalizzazioni euristiche per tessuto, pelle, occhi e capelli;
+- range biologici euristici;
+- validazione dei colori biologici.
 
 I relativi test di caratterizzazione sono eseguiti con Vitest. I 53 test correnti coprono conversioni, round trip, normalizzazione della hue, clamp, curve di normalizzazione, valori fuori dagli intervalli nominali, range biologici e validazione.
 
@@ -46,8 +46,8 @@ Il resto del motore, la persistenza e la maggior parte della UI restano temporan
 
 Requisiti:
 
-* Node.js supportato dalla versione di Vite installata;
-* npm.
+- Node.js supportato dalla versione di Vite installata;
+- npm.
 
 ```bash
 npm ci
@@ -71,11 +71,11 @@ La documentazione di progetto è indicizzata in [`docs/INDEX.md`](docs/INDEX.md)
 
 Prima di modificare il motore cromatico, leggere almeno:
 
-* [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
-* [`docs/COLOR_ENGINE_SPEC.md`](docs/COLOR_ENGINE_SPEC.md)
-* [`docs/SCIENTIFIC_SOURCES.md`](docs/SCIENTIFIC_SOURCES.md)
-* [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)
-* [`docs/DECISIONS.md`](docs/DECISIONS.md)
+- [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
+- [`docs/COLOR_ENGINE_SPEC.md`](docs/COLOR_ENGINE_SPEC.md)
+- [`docs/SCIENTIFIC_SOURCES.md`](docs/SCIENTIFIC_SOURCES.md)
+- [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)
+- [`docs/DECISIONS.md`](docs/DECISIONS.md)
 
 ## Roadmap
 

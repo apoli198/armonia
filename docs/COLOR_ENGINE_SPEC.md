@@ -37,11 +37,11 @@ Il codice applica:
 Parametri correnti:
 
 | Superficie | Gamma saturazione | Saturazione massima | Lightness normalizzata |
-|---|---:|---:|---:|
-| Tessuto | 1,4 | 68 | 5–90 |
-| Pelle | 1,2 | 38 | 20–88 |
-| Occhi | 1,6 | 72 | 15–72 |
-| Capelli | 1,3 | 55 | 5–82 |
+| ---------- | ----------------: | ------------------: | ---------------------: |
+| Tessuto    |               1,4 |                  68 |                   5–90 |
+| Pelle      |               1,2 |                  38 |                  20–88 |
+| Occhi      |               1,6 |                  72 |                  15–72 |
+| Capelli    |               1,3 |                  55 |                   5–82 |
 
 Stato: **euristica non calibrata**. Non esiste nel repository un dataset che giustifichi tali curve o range.
 
@@ -49,11 +49,11 @@ Stato: **euristica non calibrata**. Non esiste nel repository un dataset che giu
 
 La baseline definisce range HSL distinti per pelle, occhi e capelli:
 
-| Componente | Hue | Saturazione | Lightness |
-|---|---:|---:|---:|
-| Pelle | 0–70 | 2–38 | 20–88 |
-| Occhi | 0–360 | 3–72 | 15–72 |
-| Capelli | 0–90 | 5–55 | 5–82 |
+| Componente |   Hue | Saturazione | Lightness |
+| ---------- | ----: | ----------: | --------: |
+| Pelle      |  0–70 |        2–38 |     20–88 |
+| Occhi      | 0–360 |        3–72 |     15–72 |
+| Capelli    |  0–90 |        5–55 |      5–82 |
 
 I limiti sono inclusivi. `validateBioColor` può applicare una funzione di normalizzazione prima del confronto con i range.
 
@@ -246,16 +246,16 @@ input
 
 ## Ipotesi da verificare
 
-| ID | Ipotesi | Stato corrente |
-|---|---|---|
-| H-01 | Curve fisse HSL possono correggere screen-to-fabric e screen-to-biology | non supportata |
-| H-02 | Pelle, occhi e capelli determinano in modo stabile tre assi discreti | non supportata |
-| H-03 | I pesi dinamici del profilo e i pesi 50/40/10 dell'anchor biologico migliorano la previsione | arbitraria |
-| H-04 | La mappa 3 assi → 12 stagioni riflette un target osservabile | non validata |
-| H-05 | Le attuali soglie di fit predicono preferenza o compatibilità | non validata |
-| H-06 | Le rotazioni HSL producono combinazioni percepite come armoniose | parzialmente plausibile, implementazione non validata |
-| H-07 | I pesi visuali dei capi migliorano il ranking | ipotesi di prodotto |
-| H-08 | Un colore fotografico non calibrato è sufficiente per il profilo | presumibilmente fragile |
+| ID   | Ipotesi                                                                                      | Stato corrente                                        |
+| ---- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| H-01 | Curve fisse HSL possono correggere screen-to-fabric e screen-to-biology                      | non supportata                                        |
+| H-02 | Pelle, occhi e capelli determinano in modo stabile tre assi discreti                         | non supportata                                        |
+| H-03 | I pesi dinamici del profilo e i pesi 50/40/10 dell'anchor biologico migliorano la previsione | arbitraria                                            |
+| H-04 | La mappa 3 assi → 12 stagioni riflette un target osservabile                                 | non validata                                          |
+| H-05 | Le attuali soglie di fit predicono preferenza o compatibilità                                | non validata                                          |
+| H-06 | Le rotazioni HSL producono combinazioni percepite come armoniose                             | parzialmente plausibile, implementazione non validata |
+| H-07 | I pesi visuali dei capi migliorano il ranking                                                | ipotesi di prodotto                                   |
+| H-08 | Un colore fotografico non calibrato è sufficiente per il profilo                             | presumibilmente fragile                               |
 
 ## Versionamento
 

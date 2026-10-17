@@ -2,16 +2,16 @@
 
 ## Documenti
 
-| File | Scopo |
-|---|---|
-| `PROJECT_STATUS.md` | Fotografia verificabile dello stato corrente e dei rischi aperti |
-| `PRODUCT_REQUIREMENTS.md` | Obiettivi di prodotto, utenti, requisiti e non-obiettivi |
-| `ARCHITECTURE.md` | Architettura corrente, architettura target e direzione delle dipendenze |
-| `COLOR_ENGINE_SPEC.md` | Inventario del motore attuale, assunzioni e contratto target |
-| `SCIENTIFIC_SOURCES.md` | Registro delle fonti normative ed empiriche |
-| `VALIDATION_PLAN.md` | Protocollo di test e validazione scientifica |
-| `ROADMAP.md` | Sequenza di lavoro e criteri di uscita delle milestone |
-| `DECISIONS.md` | Registro delle decisioni architetturali e di prodotto |
+| File                      | Scopo                                                                   |
+| ------------------------- | ----------------------------------------------------------------------- |
+| `PROJECT_STATUS.md`       | Fotografia verificabile dello stato corrente e dei rischi aperti        |
+| `PRODUCT_REQUIREMENTS.md` | Obiettivi di prodotto, utenti, requisiti e non-obiettivi                |
+| `ARCHITECTURE.md`         | Architettura corrente, architettura target e direzione delle dipendenze |
+| `COLOR_ENGINE_SPEC.md`    | Inventario del motore attuale, assunzioni e contratto target            |
+| `SCIENTIFIC_SOURCES.md`   | Registro delle fonti normative ed empiriche                             |
+| `VALIDATION_PLAN.md`      | Protocollo di test e validazione scientifica                            |
+| `ROADMAP.md`              | Sequenza di lavoro e criteri di uscita delle milestone                  |
+| `DECISIONS.md`            | Registro delle decisioni architetturali e di prodotto                   |
 
 ## Fonti di verità
 

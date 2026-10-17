@@ -8,24 +8,24 @@ Il blocco cromatico di base è stato estratto in `src/color.ts`. Il modulo è sc
 
 Il modulo comprende:
 
-* rappresentazione HSL;
-* conversioni tra esadecimale e HSL;
-* normalizzazioni euristiche per tessuto e componenti biologici;
-* range biologici euristici;
-* validazione dei colori biologici.
+- rappresentazione HSL;
+- conversioni tra esadecimale e HSL;
+- normalizzazioni euristiche per tessuto e componenti biologici;
+- range biologici euristici;
+- validazione dei colori biologici.
 
 Gli helper matematici `_sigL` e `_powS` restano privati al modulo.
 
 L'interfaccia pubblica espone:
 
-* `Hsl`;
-* `HslNormalizer`;
-* `BioComponent`;
-* `BIO_RANGES`;
-* funzioni di conversione;
-* funzioni di normalizzazione;
-* `normHex`;
-* `validateBioColor`.
+- `Hsl`;
+- `HslNormalizer`;
+- `BioComponent`;
+- `BIO_RANGES`;
+- funzioni di conversione;
+- funzioni di normalizzazione;
+- `normHex`;
+- `validateBioColor`.
 
 I test di caratterizzazione sono mantenuti nel singolo file `tests/color.characterization.test.ts`. I 53 test coprono il comportamento corrente del blocco, inclusi limiti e comportamenti fuori dagli intervalli nominali, senza attribuire validità scientifica alle curve o ai range.
 
@@ -37,12 +37,12 @@ Il service worker è generato da `vite-plugin-pwa`. Non esistono API o backend.
 
 ## Obiettivi
 
-* rendere il motore cromatico indipendente da React;
-* migrare progressivamente a TypeScript;
-* consentire test deterministici in locale;
-* isolare persistenza, analytics e pubblicità;
-* mantenere il deploy su hosting statico indipendente dal provider;
-* preparare, senza implementarla prematuramente, una futura distribuzione mobile.
+- rendere il motore cromatico indipendente da React;
+- migrare progressivamente a TypeScript;
+- consentire test deterministici in locale;
+- isolare persistenza, analytics e pubblicità;
+- mantenere il deploy su hosting statico indipendente dal provider;
+- preparare, senza implementarla prematuramente, una futura distribuzione mobile.
 
 ## Architettura target
 
@@ -118,11 +118,11 @@ Il dominio non deve importare React, DOM, `localStorage`, provider pubblicitari 
 
 Deve contenere almeno:
 
-* valore del colore;
-* spazio colore e white point;
-* origine: manuale, fotografia, dataset o misura;
-* metadati di acquisizione disponibili;
-* livello di affidabilità.
+- valore del colore;
+- spazio colore e white point;
+- origine: manuale, fotografia, dataset o misura;
+- metadati di acquisizione disponibili;
+- livello di affidabilità.
 
 Il contratto corrente `BioComponent` distingue `skin`, `eyes` e `hair`. La UI usa ancora in alcuni punti `eye`; l'adattamento tra UI e dominio dovrà essere esplicito.
 
@@ -134,24 +134,24 @@ Deve distinguere valori continui e categorie derivate. Le categorie non devono s
 
 Deve includere:
 
-* proposta o classificazione;
-* score;
-* confidenza o margine;
-* motivazioni principali;
-* avvertenze;
-* versione del modello;
-* seed, quando applicabile.
+- proposta o classificazione;
+- score;
+- confidenza o margine;
+- motivazioni principali;
+- avvertenze;
+- versione del modello;
+- seed, quando applicabile.
 
 ## Persistenza
 
 `localStorage` può restare nella prima fase, ma deve essere racchiuso in un adapter con:
 
-* schema versionato;
-* valori predefiniti;
-* validazione runtime;
-* migrazioni;
-* gestione esplicita degli errori;
-* possibilità di sostituzione futura.
+- schema versionato;
+- valori predefiniti;
+- validazione runtime;
+- migrazioni;
+- gestione esplicita degli errori;
+- possibilità di sostituzione futura.
 
 Le chiavi attuali `chs_*` devono essere migrate senza perdita di dati oppure supportate temporaneamente come legacy.
 
@@ -159,9 +159,9 @@ Le chiavi attuali `chs_*` devono essere migrate senza perdita di dati oppure sup
 
 Le funzioni del motore devono ricevere esplicitamente:
 
-* input;
-* configurazione/versione del modello;
-* seed pseudocasuale.
+- input;
+- configurazione/versione del modello;
+- seed pseudocasuale.
 
 `Date.now()` non deve essere letto all'interno del dominio. L'orchestratore può generare il seed e registrarlo nel risultato.
 
@@ -199,10 +199,10 @@ La scelta tra wrapper web, Capacitor o implementazione più nativa deve essere e
 
 Ogni blocco estratto deve avere:
 
-* comportamento caratterizzato;
-* tipi introdotti insieme ai contratti che li richiedono;
-* test dei casi limite;
-* nessuna dipendenza UI nel dominio;
-* documentazione delle euristiche conservate;
-* nessuna modifica simultanea e non necessaria alla presentazione;
-* build PWA verificata.
+- comportamento caratterizzato;
+- tipi introdotti insieme ai contratti che li richiedono;
+- test dei casi limite;
+- nessuna dipendenza UI nel dominio;
+- documentazione delle euristiche conservate;
+- nessuna modifica simultanea e non necessaria alla presentazione;
+- build PWA verificata.
