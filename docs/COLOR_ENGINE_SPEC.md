@@ -1,126 +1,63 @@
-# Motore cromatico: revisione aperta
+# Motore cromatico: lavoro aperto
 
-Questo documento contiene soltanto le verifiche ancora necessarie.
-Contratti e fonti stabilizzati vanno mantenuti vicino al codice e ai test,
-eliminando qui le informazioni duplicate.
+Mantenere qui soltanto questioni e criteri ancora aperti.
+Contratti e riferimenti stabilizzati appartengono al codice e ai test.
 
-## Contratti tecnici dell'incremento corrente
+## Limiti della baseline
 
-- Le conversioni accettano HEX sRGB opachi nel formato #RRGGBB.
-- hexToHsl rifiuta un formato non valido con TypeError.
-- hslToHex rifiuta coordinate non finite con RangeError.
-- Per coordinate finite conserva rotazione della hue e clamp esistenti.
-- validateBioColor restituisce false per HEX o componenti non validi
-  e per output non finiti del normalizzatore.
-- I riflessi mancanti o non riconosciuti vengono ricondotti ai default.
-- I chiamanti UI filtrano i colori persistiti non validi e impediscono
-  la conferma di HEX incompleti.
+src/color-heuristics.ts raccoglie trasformazioni e range non calibrati.
+La separazione non ne cambia i risultati né ne dimostra la validità.
 
-Questi controlli proteggono l'esecuzione.
-Non validano il significato scientifico delle formule.
+- normFabric e normBio\* non ricostruiscono colori fisici misurati.
+- BIO_RANGES non certifica plausibilità biologica.
+- La lightness HSL non equivale a luminanza o chiarezza CIELAB.
+- hairReflectivity non è una misura di riflettanza.
+- Pesi, soglie, riflessi e mapping stagionale non hanno una validazione
+  identificata per questa implementazione.
+- I punteggi non sono probabilità né indicatori di affidabilità.
 
-## Conversioni e rappresentazioni
+## Correzione angolare e rischio residuo
 
-Le formule HEX/HSL sono coerenti con le conversioni sRGB/HSL
-nel dominio degli input validi esaminato.
+hsl-heuristic-2 usa lo scarto orientato lungo l'arco più breve per i termini
+della hue di pelle e capelli. Il caso noto vicino a 0°/360° ha una regressione.
 
-La revisione scientifica deve ancora consolidare:
+Lo scarto sceglie -180° nel caso antipodale: esiste ancora una discontinuità
+a 180° dalla reference. Questa è una correzione geometrica locale,
+non un modello globale o biologico del sottotono.
 
-- riferimenti e tolleranze nei test di conformità;
-- significato della hue nei colori acromatici;
-- distinzione tra lightness HSL, luminanza e chiarezza percettiva;
-- spazio colore e condizioni appropriati per le misure del profilo.
+I risultati possono cambiare rispetto alla baseline nei colori interessati.
+Non trattare la nuova classificazione come un riferimento scientifico.
 
-HSL non è percettivamente uniforme.
-Una conversione corretta non valida le decisioni estetiche successive.
+## Prossimo incremento
 
-## Trasformazioni euristiche
+Implementare sRGB → RGB lineare → XYZ → CIELAB.
 
-normFabric, normBioSkin, normBioEyes e normBioHair applicano potenze
-alla saturazione e sigmoidali alla lightness.
+Prima del codice fissare:
 
-Non è stata identificata una calibrazione che giustifichi i parametri
-come correzione dal colore a schermo al colore fisico.
-Queste trasformazioni non sono la linearizzazione sRGB.
+- dominio, scale e unità delle coordinate;
+- bianco di riferimento e gestione dell'adattamento cromatico;
+- fonti degli algoritmi e vettori numerici esterni;
+- tolleranze e trattamento degli input non validi.
 
-Definire il loro dominio e decidere, sulla base delle evidenze,
-quali rimuovere, sostituire o isolare per il confronto con la baseline.
+Conservare le vecchie soglie soltanto nel percorso legacy.
+Non introdurre nuovi coefficienti estetici in questo incremento.
 
-## Range biologici
+## Revisione successiva del profilo
 
-BIO_RANGES contiene intervalli HSL scelti manualmente.
-validateBioColor ne verifica l'appartenenza, non la plausibilità biologica.
+Definire operativamente sottotono, profondità, intensità e contrasto.
+Decidere quali grandezze siano misurabili e quali giudizi estetici.
 
-La revisione deve distinguere formato valido, dominio della rappresentazione
-e plausibilità supportata da misure.
+Per la validazione empirica servono:
 
-Non usare i range per escludere input biologici senza dati che lo giustifichino.
+- target osservabile: misura, accordo tra valutatori o preferenza;
+- dati con provenienza, condizioni di acquisizione e limiti documentati;
+- separazione tra dati di sviluppo e valutazione;
+- confronto tra baseline e candidato sugli stessi casi;
+- metriche, incertezza e limiti di generalizzazione espliciti.
 
-## Profilo
+Un campione fotografico non calibrato non è una misura di riflettanza.
+Definire il protocollo prima di attribuire affidabilità al profilo.
 
-Il segnale della pelle usa ancora (hSk - 22) / 22,
-che non rispetta la circolarità della hue.
-
-Caso da trasformare in regressione, con occhi e capelli #808080
-e riflessi predefiniti:
-
-| Pelle   | Sottotono corrente | Stagione corrente |
-| ------- | ------------------ | ----------------- |
-| #b98c8d | warm               | spring-light      |
-| #b98d8c | cool               | summer-soft       |
-
-Una correzione angolare non basta a validare il sottotono.
-
-Prima di modificare il modello:
-
-- definire operativamente sottotono, profondità e intensità;
-- rivedere hairReflectivity e l'effetto del volume dei capelli;
-- verificare l'effetto delle normalizzazioni;
-- giustificare o confinare pesi, soglie e correzioni dei riflessi;
-- distinguere punteggi, categorie e ambiguità.
-
-Il mapping a 12 stagioni resta una tassonomia estetica non validata
-per l'implementazione corrente.
-
-## Metodo di verifica
-
-Per ciascun blocco:
-
-1. Verificare formule, unità, dominio e fonti primarie.
-2. Confrontare i calcoli con riferimenti e tolleranze dichiarate.
-3. Conservare fixture della baseline senza trattarle come verità scientifica.
-4. Aggiungere regressioni per gli errori corretti.
-5. Distinguere cambiamenti intenzionali e regressioni.
-
-Quando servono dati empirici:
-
-- definire il target osservabile;
-- documentare acquisizione, provenienza e limiti dei dati;
-- separare misure, giudizi degli esperti e preferenze;
-- confrontare baseline e candidato sugli stessi dati congelati;
-- dichiarare metriche, incertezza e limiti di generalizzazione.
-
-In assenza di dati sufficienti, dichiarare il modello non validato.
-
-## Acquisizione
-
-Un campione fotografico dipende da illuminazione, camera, esposizione,
-bilanciamento del bianco, geometria e gestione del colore.
-
-Non trattarlo come misura della riflettanza.
-Definire un protocollo prima di validare il profilo.
-Non attribuire affidabilità numerica senza un metodo che la giustifichi.
-
-## Blocchi successivi
-
-Fit, armonie, pesi dei capi e ranking richiedono ancora revisione.
-
-Distinguere differenza cromatica, compatibilità personale, armonia
-e preferenza. Non fondere questi obiettivi in un punteggio opaco.
-
-Valutare conversioni colorimetriche e differenze cromatiche appropriate
-quando necessarie, documentando white point e condizioni pertinenti.
-
-Non trasferire automaticamente le soglie HSL in un nuovo spazio.
-Le modifiche sostanziali al modello richiedono un identificatore
-e un confronto riproducibile distinti dalla versione dell'app.
+Fit, armonie e ranking saranno revisionati distinguendo differenza cromatica,
+compatibilità personale e preferenza. La base colorimetrica da sola
+non valida nessuno di questi obiettivi.

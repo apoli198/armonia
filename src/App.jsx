@@ -18,16 +18,13 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
+import { hexToHsl, hslToHex, normHex, isHexColor } from "./color";
 import {
-  hexToHsl,
-  hslToHex,
   normBioEyes,
   normBioHair,
   normBioSkin,
   normFabric,
-  normHex,
-  isHexColor,
-} from "./color";
+} from "./color_heuristics";
 import {
   normalizeProfileReflexes,
   analyzeProfile,
@@ -768,7 +765,7 @@ function evaluateInContext(hex, material, weight, profile, assignedItems) {
 
 // ─── Targeted correction ──────────────────────────────────────────────────────
 // 4 axes: undertone → depth → intensity → contrast. 3 steps per axis (12 total).
-// Uses continuous profile scores for calibrated targets.
+// Uses heuristic profile scores; targets are not experimentally calibrated.
 // Fallback: contextual neutral.
 const _STEP_H = 5,
   _STEP_L = 6,
@@ -1755,6 +1752,10 @@ function ProfileTab({
         <div style={{ fontSize: 10, color: T.text3, lineHeight: 1.7 }}>
           {season.desc}
         </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: T.text2 }}>
+          Modello estetico sperimentale, non validato. Il risultato dipende
+          anche dall'acquisizione dei colori.
+        </div>
         <div style={{ marginTop: 8, fontSize: 10, color: T.text3 }}>
           Undertone:{" "}
           <b style={{ color: T.text }}>
@@ -1960,7 +1961,7 @@ function OutfitCard({ combo, season, skinColor, hairColor }) {
                         lineHeight: 1,
                         flexShrink: 0,
                       }}
-                      title="Colore normalizzato per tessuto reale"
+                      title="Anteprima con trasformazione euristica"
                     >
                       ⓘ
                     </span>
@@ -2031,7 +2032,8 @@ function OutfitCard({ combo, season, skinColor, hairColor }) {
                       </span>
                     </div>
                     <div style={{ marginTop: 4, fontSize: 9, color: T.text3 }}>
-                      I colori a schermo sono più vividi dei tessuti reali.
+                      La trasformazione è euristica e non simula un tessuto
+                      misurato.
                     </div>
                   </div>
                 )}
@@ -2374,8 +2376,8 @@ function WardrobeTab({
           non cambia · <b>Escluso:</b> non appare negli outfit
         </div>
         <div style={{ fontSize: 10, color: T.text3, marginTop: 4 }}>
-          I colori nell'Outfit sono normalizzati per riflettere l'aspetto reale
-          del tessuto (schermo → tessuto).
+          I colori degli outfit usano trasformazioni euristiche non calibrate su
+          tessuti reali.
         </div>
       </div>
       {showPicker && (
@@ -2537,6 +2539,12 @@ export default function App() {
   );
   const [reflexes, setReflexes] = useState(() =>
     normalizeProfileReflexes(lsGet("chs_reflexes", null)),
+  );
+  const [modes, setModes] = useState(() =>
+    lsGet("chs_modes", {
+      ...Object.fromEntries(GARMENTS.map((g) => [g.id, "auto"])),
+      cappello: "excluded",
+    }),
   );
   const [fixedColors, setFixedColors] = useState(() => {
     const saved = lsGet("chs_fixedColors", null);

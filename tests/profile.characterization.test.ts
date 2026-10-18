@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as color from "../src/color";
+import * as color from "../src/color_heuristics";
 import type { Hsl } from "../src/color";
 import {
   analyzeProfile,

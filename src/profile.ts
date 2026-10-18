@@ -1,4 +1,7 @@
-import { hexToHsl, normBioEyes, normBioHair, normBioSkin } from "./color";
+import { hexToHsl, signedHueDifference } from "./color";
+import { normBioEyes, normBioHair, normBioSkin } from "./color_heuristics";
+
+export const PROFILE_MODEL_VERSION = "hsl-heuristic-2" as const;
 
 export type Undertone = "warm" | "cool" | "neutral";
 export type Depth = "light" | "deep";
@@ -45,6 +48,8 @@ export function normalizeProfileReflexes(
 }
 
 export type ProfileAnalysis = Readonly<{
+  modelVersion: typeof PROFILE_MODEL_VERSION;
+  validationStatus: "unvalidated";
   undertone: Undertone;
   depth: Depth;
   intensity: Intensity;
@@ -117,14 +122,17 @@ export function analyzeProfile(
   const volMult = VOLUME_MULT[options.hairVolume ?? "medium"] ?? 0.75;
   const hairSignalWeight = hairReflNorm * volMult;
 
+  // Correzione geometrica locale: 0° e 360° sono lo stesso angolo.
+  // Il proxy e le sue soglie restano euristici; lo scarto orientato
+  // ha un punto di scelta del verso a 180° dalla reference.
   const skinHueValid = sSk > 3;
   const skinUt = skinHueValid
-    ? Math.max(-1.5, Math.min(1.5, (hSk - 22) / 22))
+    ? Math.max(-1.5, Math.min(1.5, signedHueDifference(hSk, 22) / 22))
     : 0;
 
   let hairUt = 0;
   if (lHr > 12 && sHr > 5) {
-    hairUt = Math.max(-1, Math.min(1, (hHr - 30) / 40));
+    hairUt = Math.max(-1, Math.min(1, signedHueDifference(hHr, 30) / 40));
   }
 
   let eyeUt = 0;
@@ -201,7 +209,16 @@ export function analyzeProfile(
   const intensity: Intensity =
     intScore > 55 ? "high" : intScore < 30 ? "low" : "medium";
 
-  return { undertone, depth, intensity, utScore, depthScore, intScore };
+  return {
+    modelVersion: PROFILE_MODEL_VERSION,
+    validationStatus: "unvalidated",
+    undertone,
+    depth,
+    intensity,
+    utScore,
+    depthScore,
+    intScore,
+  };
 }
 
 /** Mappatura estetica euristica; non restituisce confidenza o probabilità. */

@@ -10,7 +10,14 @@ export type HslNormalizer = (
   lightnessPercent: number,
 ) => Hsl;
 
-export type BioComponent = "skin" | "eyes" | "hair";
+/**
+ * Conversioni di colori sRGB opachi a 8 bit.
+ * Riferimento: CSS Color 4, CRD 2026-10-09, sezioni 7.1 e 7.2.
+ * https://www.w3.org/TR/2026/CRD-css-color-4-20261009/
+ *
+ * HSL non è percettivamente uniforme.
+ * Per gli acromatici si conserva H=0 come convenzione rappresentativa.
+ */
 /** Contratto applicativo: HEX sRGB opaco a sei cifre, senza spazi. */
 export function isHexColor(value: unknown): value is string {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
@@ -22,73 +29,28 @@ function assertFiniteHsl(h: number, s: number, l: number): void {
   }
 }
 
-type ChannelRange = Readonly<{
-  min: number;
-  max: number;
-}>;
-
-type BioColorRange = Readonly<{
-  h: ChannelRange;
-  s: ChannelRange;
-  l: ChannelRange;
-}>;
-
 /**
- * Intervalli HSL euristici usati dalla baseline corrente.
- *
- * Questi valori non sono stati validati sperimentalmente e non devono essere
- * interpretati come intervalli biologici scientificamente dimostrati.
+ * Scarto angolare orientato lungo l'arco più breve, in [-180, 180).
+ * A 180° i due versi sono equivalenti: questa API sceglie -180°.
+ * Principio: CSS Color 4, sezione 13.5 (hue interpolation).
+ * Non è una misura di distanza percettiva.
  */
-export const BIO_RANGES = {
-  skin: {
-    h: { min: 0, max: 70 },
-    l: { min: 20, max: 88 },
-    s: { min: 2, max: 38 },
-  },
-  eyes: {
-    h: { min: 0, max: 360 },
-    l: { min: 15, max: 72 },
-    s: { min: 3, max: 72 },
-  },
-  hair: {
-    h: { min: 0, max: 90 },
-    l: { min: 5, max: 82 },
-    s: { min: 5, max: 55 },
-  },
-} as const satisfies Readonly<Record<BioComponent, BioColorRange>>;
+export function signedHueDifference(hue: number, reference: number): number {
+  if (![hue, reference].every(Number.isFinite)) {
+    throw new RangeError("Gli angoli devono essere numeri finiti.");
+  }
 
-function _sigL(
-  lightnessPercent: number,
-  minimumLightness: number,
-  maximumLightness: number,
-  k = 4.5,
-): number {
-  const x = lightnessPercent / 100;
+  const h = ((hue % 360) + 360) % 360;
+  const r = ((reference % 360) + 360) % 360;
 
-  const sig = 1 / (1 + Math.exp(-k * (x - 0.5)));
-  const sig0 = 1 / (1 + Math.exp(-k * (0 - 0.5)));
-  const sig1 = 1 / (1 + Math.exp(-k * (1 - 0.5)));
-
-  return (
-    minimumLightness +
-    ((maximumLightness - minimumLightness) * (sig - sig0)) / (sig1 - sig0)
-  );
-}
-
-function _powS(
-  saturationPercent: number,
-  gamma: number,
-  maximumSaturation: number,
-): number {
-  return (
-    Math.pow(Math.max(0, saturationPercent / 100), gamma) * maximumSaturation
-  );
+  return ((h - r + 540) % 360) - 180;
 }
 
 export function hexToHsl(hex: string): Hsl {
   if (!isHexColor(hex)) {
     throw new TypeError("Il colore deve avere il formato #RRGGBB.");
   }
+
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -127,6 +89,7 @@ export function hslToHex(
   lightnessPercent: number,
 ): string {
   assertFiniteHsl(hueDegrees, saturationPercent, lightnessPercent);
+
   const h = ((hueDegrees % 360) + 360) % 360;
   const s = Math.min(100, Math.max(0, saturationPercent)) / 100;
   const l = Math.min(100, Math.max(0, lightnessPercent)) / 100;
@@ -168,90 +131,7 @@ export function hslToHex(
   return `#${channels.join("")}`;
 }
 
-export function normFabric(
-  hueDegrees: number,
-  saturationPercent: number,
-  lightnessPercent: number,
-): Hsl {
-  return [
-    hueDegrees,
-    _powS(saturationPercent, 1.4, 68),
-    _sigL(lightnessPercent, 5, 90),
-  ];
-}
-
-export function normBioSkin(
-  hueDegrees: number,
-  saturationPercent: number,
-  lightnessPercent: number,
-): Hsl {
-  return [
-    hueDegrees,
-    _powS(saturationPercent, 1.2, 38),
-    _sigL(lightnessPercent, 20, 88, 3.5),
-  ];
-}
-
-export function normBioEyes(
-  hueDegrees: number,
-  saturationPercent: number,
-  lightnessPercent: number,
-): Hsl {
-  return [
-    hueDegrees,
-    _powS(saturationPercent, 1.6, 72),
-    _sigL(lightnessPercent, 15, 72, 4),
-  ];
-}
-
-export function normBioHair(
-  hueDegrees: number,
-  saturationPercent: number,
-  lightnessPercent: number,
-): Hsl {
-  return [
-    hueDegrees,
-    _powS(saturationPercent, 1.3, 55),
-    _sigL(lightnessPercent, 5, 82, 5),
-  ];
-}
-
-export function validateBioColor(
-  hex: string,
-  component: BioComponent,
-  normalize?: HslNormalizer,
-): boolean {
-  if (
-    !isHexColor(hex) ||
-    (component !== "skin" && component !== "eyes" && component !== "hair")
-  ) {
-    return false;
-  }
-
-  const [h, s, l] = hexToHsl(hex);
-  const normalizedHsl = normalize ? normalize(h, s, l) : [h, s, l];
-
-  if (
-    !Array.isArray(normalizedHsl) ||
-    normalizedHsl.length !== 3 ||
-    !normalizedHsl.every(Number.isFinite)
-  ) {
-    return false;
-  }
-
-  const [normalizedH, normalizedS, normalizedL] = normalizedHsl;
-  const ranges = BIO_RANGES[component];
-
-  return (
-    normalizedH >= ranges.h.min &&
-    normalizedH <= ranges.h.max &&
-    normalizedS >= ranges.s.min &&
-    normalizedS <= ranges.s.max &&
-    normalizedL >= ranges.l.min &&
-    normalizedL <= ranges.l.max
-  );
-}
-
+/** Applica una trasformazione HSL; non ne certifica il significato fisico. */
 export function normHex(hex: string, normalize: HslNormalizer): string {
   const [h, s, l] = hexToHsl(hex);
   const [normalizedH, normalizedS, normalizedL] = normalize(h, s, l);

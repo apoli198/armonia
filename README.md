@@ -33,8 +33,13 @@ costruire un'app affidabile e imparare TypeScript lavorando sul codice reale.
 - Configurazione di deploy Netlify presente.
 
 La maggior parte dell'applicazione è ancora in src/App.jsx.
-Il modulo src/color.ts contiene conversioni HEX/HSL e trasformazioni
-euristiche già estratte, ma ancora da revisionare e correggere.
+src/color.ts contiene conversioni HEX/HSL e operazioni angolari.
+src/color-heuristics.ts raccoglie curve e range legacy non validati.
+src/profile.ts contiene analisi e classificazione euristiche, identificate
+con versione del modello e stato di validazione espliciti.
+
+Il prossimo incremento introduce una base colorimetrica verificabile
+prima della revisione del profilo e dell'estrazione degli altri algoritmi.
 
 Ogni incremento del motore comprende analisi del comportamento,
 revisione matematica e scientifica, contratti TypeScript e test.

@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
-
 import {
-  BIO_RANGES,
   hexToHsl,
   hslToHex,
+  normHex,
+  type Hsl,
+  type HslNormalizer,
+} from "../src/color";
+import {
+  BIO_RANGES,
   normBioEyes,
   normBioHair,
   normBioSkin,
   normFabric,
-  normHex,
   validateBioColor,
   type BioComponent,
-  type Hsl,
-  type HslNormalizer,
-} from "../src/color";
+} from "../src/color_heuristics";
 
 function expectHslCloseTo(actual: Hsl, expected: Hsl): void {
   expect(actual[0]).toBeCloseTo(expected[0], 10);

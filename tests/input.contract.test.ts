@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  hexToHsl,
-  hslToHex,
-  isHexColor,
-  validateBioColor,
-  type BioComponent,
-  type Hsl,
-} from "../src/color";
+import { hexToHsl, hslToHex, isHexColor, type Hsl } from "../src/color";
+import { validateBioColor, type BioComponent } from "../src/color_heuristics";
 import { analyzeProfile, normalizeProfileReflexes } from "../src/profile";
 
 const COLORS = ["#D4A574", "#6B4423", "#3D2B1F"] as const;

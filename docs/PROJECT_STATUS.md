@@ -1,62 +1,51 @@
 # Stato di sviluppo
 
-Base dell'intervento: main, commit
-31dcad8c968e2df12fe3bbafc87743e3da8df683.
+Base del pacchetto: main, commit
+26f55882763e46d403a9b9d3c2338c15d4cf1d92.
 
-## Codice presente
+## Incremento preparato
 
-- src/color.ts contiene conversioni HEX/HSL e trasformazioni euristiche.
-- src/profile.ts contiene contrasto, analisi del profilo e classificazione stagionale.
-- src/App.jsx associa i risultati del profilo ai metadati di presentazione
-  e contiene ancora fit, armonie, generazione, stato e persistenza.
-- I due blocchi TypeScript hanno test di caratterizzazione.
-- Bootstrap React e configurazione Vite sono in TypeScript.
+- Conversioni e differenza angolare in src/color.ts.
+- Curve e range non validati isolati in src/color-heuristics.ts.
+- Profilo identificato come hsl-heuristic-2, con stato unvalidated.
+- Corretto il caso di salto del sottotono vicino a 0°/360°.
+- Rimossi dalla UI i riferimenti non dimostrati alla simulazione dei tessuti.
+- Ripristinata in App.jsx la dichiarazione di modes/setModes mancante in main.
 
-## Correzioni tecniche preparate
+Le euristiche restano operative per il confronto con la baseline.
+La revisione non costituisce validazione empirica dell'armocromia.
 
-- Contratto HEX limitato a #RRGGBB, verificato integralmente.
-- Rifiuto di coordinate HSL non finite nella conversione verso HEX.
-- Controllo esplicito dei componenti in validateBioColor.
-- Normalizzazione dei riflessi prima dei lookup.
-- Correzione del test con @ts-expect-error.
-- Filtraggio dei colori persistiti e controllo della conferma nel selettore.
-- Type-check richiesto prima della build.
-- Test di contratto in tests/input.contract.test.ts.
+## Verifica del pacchetto
 
-Il controllo della persistenza riguarda i dati cromatici coinvolti.
-Non costituisce una revisione completa dello storage.
+Nella copia temporanea dell'assistente:
 
-## Verifica dell'intervento
+- 164 test positivi;
+- type-check, build e generazione PWA positivi;
+- round trip HEX/HSL esatto per tutti i 16.777.216 colori RGB a 8 bit;
+- confronto della conversione HSL su 480 punti con formula di riferimento;
+- rendering iniziale positivo con risultato predefinito e avviso sperimentale.
 
-Nella copia temporanea preparata dall'assistente:
+Il round trip verifica reversibilità, non correttezza del modello estetico.
+Questi risultati riguardano il pacchetto preparato, non un commit applicato.
 
-- 143 test positivi;
-- type-check positivo;
-- build e generazione PWA positive;
-- rendering iniziale positivo con default e alcuni dati persistiti corrotti.
+Per chiudere l'incremento nella working copy del proprietario:
 
-Restano da verificare nella working copy del proprietario:
+- applicare le modifiche e ottenere npm test e npm run build positivi;
+- verificare selettore HEX, riflessi, guardaroba, generazione e ricaricamento;
+- verificare installazione e funzionamento offline della PWA.
 
-- applicazione corretta delle modifiche;
-- npm test;
-- npm run build, che comprende il type-check;
-- selettore HEX, colori salvati e riflessi;
-- generazione degli outfit;
-- ricaricamento, persistenza e funzionamento PWA.
+## Prossimo incremento: base colorimetrica
 
-L'intervento non è chiuso prima degli output reali e del controllo manuale.
+Obiettivo: aggiungere funzioni pure per sRGB → RGB lineare → XYZ → CIELAB,
+con unità, bianco di riferimento, adattamento cromatico e fonti espliciti.
 
-## Prossimo incremento: revisione scientifica
+Criteri di completamento:
 
-Revisionare le formule dei due moduli TypeScript.
+- modulo indipendente dalla UI e dalle curve legacy;
+- contratti TypeScript che distinguano le rappresentazioni;
+- vettori di riferimento esterni, tolleranze e casi limite documentati;
+- test, type-check e build positivi;
+- nessun trasferimento automatico di soglie HSL in CIELAB.
 
-Problemi aperti:
-
-- curve normFabric e normBio\* prive di calibrazione identificata;
-- BIO_RANGES non validati come intervalli biologici;
-- discontinuità del sottotono vicino a 0°/360°;
-- uso della lightness HSL per profondità e contrasto;
-- hairReflectivity priva di relazione calibrata con la riflettanza;
-- pesi, soglie, riflessi e mapping stagionale non validati.
-
-Le correzioni tecniche non attribuiscono validità scientifica al modello.
+In seguito: definire le grandezze del profilo e il protocollo di validazione
+prima di estrarre fit, armonie e ranking.
