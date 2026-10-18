@@ -1,78 +1,65 @@
 # Motore cromatico: revisione aperta
 
-Questo documento raccoglie soltanto i problemi e le verifiche ancora necessari.
-Non certifica il motore corrente. Contratti, formule e fonti stabilizzati
-devono essere trasferiti vicino al codice e ai test, eliminando qui
-le sezioni corrispondenti.
+Questo documento contiene soltanto le verifiche ancora necessarie.
+Contratti e fonti stabilizzati vanno mantenuti vicino al codice e ai test,
+eliminando qui le informazioni duplicate.
 
-## Confini da rispettare
+## Contratti tecnici dell'incremento corrente
 
-Separare:
+- Le conversioni accettano HEX sRGB opachi nel formato #RRGGBB.
+- hexToHsl rifiuta un formato non valido con TypeError.
+- hslToHex rifiuta coordinate non finite con RangeError.
+- Per coordinate finite conserva rotazione della hue e clamp esistenti.
+- validateBioColor restituisce false per HEX o componenti non validi
+  e per output non finiti del normalizzatore.
+- I riflessi mancanti o non riconosciuti vengono ricondotti ai default.
+- I chiamanti UI filtrano i colori persistiti non validi e impediscono
+  la conferma di HEX incompleti.
 
-- rappresentazione e conversione dei colori;
-- qualità e provenienza dell'input;
-- caratteristiche del profilo;
-- classificazione estetica;
-- compatibilità personale;
-- armonia tra colori;
-- generazione e ranking degli outfit.
+Questi controlli proteggono l'esecuzione.
+Non validano il significato scientifico delle formule.
 
-Una conversione corretta non valida le decisioni estetiche costruite sopra di essa.
+## Conversioni e rappresentazioni
 
-## Blocco colore
-
-### Conversioni HEX/HSL
-
-Le formule correnti sono coerenti con le conversioni sRGB/HSL
+Le formule HEX/HSL sono coerenti con le conversioni sRGB/HSL
 nel dominio degli input validi esaminato.
 
-Restano da definire e verificare:
+La revisione scientifica deve ancora consolidare:
 
-- formati HEX accettati;
-- unità e intervalli HSL;
-- trattamento di NaN, infiniti e valori finiti fuori intervallo;
-- significato della hue per i colori acromatici;
-- precisione, arrotondamento e tolleranze;
-- gestione degli errori nei chiamanti e nella persistenza.
+- riferimenti e tolleranze nei test di conformità;
+- significato della hue nei colori acromatici;
+- distinzione tra lightness HSL, luminanza e chiarezza percettiva;
+- spazio colore e condizioni appropriati per le misure del profilo.
 
-HSL è una rappresentazione utile per controlli e trasformazioni cromatiche.
-La sua lightness non coincide con luminanza o chiarezza percettiva.
-Le sue distanze non vanno trattate automaticamente come differenze percepite.
+HSL non è percettivamente uniforme.
+Una conversione corretta non valida le decisioni estetiche successive.
 
-### Trasformazioni euristiche
+## Trasformazioni euristiche
 
 normFabric, normBioSkin, normBioEyes e normBioHair applicano potenze
 alla saturazione e sigmoidali alla lightness.
 
-Non è stata identificata una calibrazione che giustifichi i parametri correnti
+Non è stata identificata una calibrazione che giustifichi i parametri
 come correzione dal colore a schermo al colore fisico.
 Queste trasformazioni non sono la linearizzazione sRGB.
 
-Separarle dalle conversioni. Un eventuale mantenimento temporaneo serve
-al confronto con la baseline e deve restare esplicitamente sperimentale.
+Definire il loro dominio e decidere, sulla base delle evidenze,
+quali rimuovere, sostituire o isolare per il confronto con la baseline.
 
-### Range biologici
+## Range biologici
 
 BIO_RANGES contiene intervalli HSL scelti manualmente.
-validateBioColor controlla l'appartenenza a questi intervalli;
-non dimostra che un colore sia biologicamente plausibile.
+validateBioColor ne verifica l'appartenenza, non la plausibilità biologica.
 
-Distinguere:
+La revisione deve distinguere formato valido, dominio della rappresentazione
+e plausibilità supportata da misure.
 
-1. formato valido;
-2. coordinate nel dominio della rappresentazione;
-3. appartenenza a un intervallo euristico;
-4. plausibilità supportata da dati.
-
-Correggere inoltre il controllo runtime dei componenti, includendo
-chiavi ereditate come toString e constructor nei casi di regressione.
+Non usare i range per escludere input biologici senza dati che lo giustifichino.
 
 ## Profilo
 
-### Discontinuità della hue
-
-La formula corrente usa (hSk - 22) / 22 per il segnale della pelle.
-Questa operazione non rispetta la circolarità della hue.
+Il segnale della pelle usa ancora (hSk - 22) / 22,
+che non rispetta la circolarità della hue.
 
 Caso da trasformare in regressione, con occhi e capelli #808080
 e riflessi predefiniti:
@@ -82,98 +69,58 @@ e riflessi predefiniti:
 | #b98c8d | warm               | spring-light      |
 | #b98d8c | cool               | summer-soft       |
 
-I due input differiscono di un livello in due canali RGB.
-Il risultato dipende dall'attraversamento di 0°/360°.
+Una correzione angolare non basta a validare il sottotono.
 
-Una distanza angolare può correggere il trattamento della coordinata,
-ma non basta a validare un modello del sottotono.
+Prima di modificare il modello:
 
-### Grandezze e categorie
-
-Prima dell'estrazione:
-
-- definire operativamente cosa intendiamo per sottotono, profondità e intensità;
-- distinguere coordinate del colore, punteggi e categorie;
-- rivedere hairReflectivity, che non misura la riflettanza fisica;
-- verificare l'effetto delle normalizzazioni e del volume dei capelli;
-- giustificare o confinare soglie, pesi e correzioni;
-- rappresentare casi fuori dominio e ambiguità senza inventare probabilità.
+- definire operativamente sottotono, profondità e intensità;
+- rivedere hairReflectivity e l'effetto del volume dei capelli;
+- verificare l'effetto delle normalizzazioni;
+- giustificare o confinare pesi, soglie e correzioni dei riflessi;
+- distinguere punteggi, categorie e ambiguità.
 
 Il mapping a 12 stagioni resta una tassonomia estetica non validata
 per l'implementazione corrente.
 
-## Blocchi successivi
+## Metodo di verifica
 
-Fit, armonie, pesi dei capi e ranking richiedono ancora revisione.
-Rotazioni HSL, penalità manuali e ricerca di colori alternativi
-non dimostrano da sole armonia o preferenza.
+Per ciascun blocco:
 
-Prima di modificarli, distinguere il fenomeno da prevedere:
-differenza cromatica, compatibilità col profilo, preferenza personale
-o giudizio estetico di osservatori.
+1. Verificare formule, unità, dominio e fonti primarie.
+2. Confrontare i calcoli con riferimenti e tolleranze dichiarate.
+3. Conservare fixture della baseline senza trattarle come verità scientifica.
+4. Aggiungere regressioni per gli errori corretti.
+5. Distinguere cambiamenti intenzionali e regressioni.
 
-## Protocollo di verifica per ogni blocco
+Quando servono dati empirici:
 
-### Correttezza implementativa
-
-- Confrontare le formule con riferimenti primari.
-- Dichiarare unità, dominio e tolleranze.
-- Verificare casi limite, acromatici e circolarità degli angoli.
-- Gestire esplicitamente gli input non validi.
-- Verificare determinismo e seed dove applicabili.
-
-### Confronto con la baseline
-
-- Conservare fixture minime che descrivano il comportamento precedente.
-- Aggiungere una regressione per ogni errore corretto.
-- Distinguere cambiamenti intenzionali e regressioni.
-- Non usare gli output precedenti come prova di correttezza scientifica.
-
-### Validazione empirica
-
-Quando una conclusione dipende da persone o misure:
-
-- definire prima il target osservabile;
+- definire il target osservabile;
 - documentare acquisizione, provenienza e limiti dei dati;
-- separare etichette degli esperti, preferenze e misure;
-- conservare il valutatore quando serva misurare l'accordo;
+- separare misure, giudizi degli esperti e preferenze;
 - confrontare baseline e candidato sugli stessi dati congelati;
-- scegliere metriche e criteri prima del confronto finale;
-- riportare incertezza, errori e limiti di generalizzazione.
+- dichiarare metriche, incertezza e limiti di generalizzazione.
 
-In assenza di dati sufficienti, il blocco può essere verificato
-nell'implementazione ma resta empiricamente non validato.
+In assenza di dati sufficienti, dichiarare il modello non validato.
 
-## Acquisizione e dati
+## Acquisizione
 
 Un campione fotografico dipende da illuminazione, camera, esposizione,
 bilanciamento del bianco, geometria e gestione del colore.
 
-Registrare l'origine dell'input e i metadati disponibili.
+Non trattarlo come misura della riflettanza.
+Definire un protocollo prima di validare il profilo.
 Non attribuire affidabilità numerica senza un metodo che la giustifichi.
 
-Il protocollo fotografico va definito prima di validare il profilo.
-Luce uniforme, assenza di filtri e geometria ripetibile sono accorgimenti
-da valutare, non una garanzia automatica di misura calibrata.
+## Blocchi successivi
 
-Usare fixture sintetiche o dati con provenienza e licenza compatibili.
-Non inserire immagini identificabili o dati personali senza un processo esplicito.
+Fit, armonie, pesi dei capi e ranking richiedono ancora revisione.
 
-## Fondamenti da introdurre quando necessari
+Distinguere differenza cromatica, compatibilità personale, armonia
+e preferenza. Non fondere questi obiettivi in un punteggio opaco.
 
-Per le misure colorimetriche valutare sRGB linearizzato, XYZ, CIELAB
-e differenze cromatiche con riferimenti di test.
+Valutare conversioni colorimetriche e differenze cromatiche appropriate
+quando necessarie, documentando white point e condizioni pertinenti.
 
-Documentare white point e condizioni pertinenti.
-Le conversioni devono essere coerenti lungo tutta la pipeline.
-
-Non trasferire automaticamente in un nuovo spazio le soglie HSL precedenti.
-Uno spazio più appropriato non valida da solo il modello di raccomandazione.
-
-## Evoluzione del modello
-
-Le modifiche sostanziali al comportamento richiedono un identificatore
-del modello e un confronto riproducibile, distinti dalla versione dell'app.
-
-Non presentare come scientificamente accurato un risultato privo
-delle evidenze necessarie.
+Non trasferire automaticamente le soglie HSL in un nuovo spazio.
+Le modifiche sostanziali al modello richiedono un identificatore
+e un confronto riproducibile distinti dalla versione dell'app.

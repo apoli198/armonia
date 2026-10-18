@@ -11,6 +11,16 @@ export type HslNormalizer = (
 ) => Hsl;
 
 export type BioComponent = "skin" | "eyes" | "hair";
+/** Contratto applicativo: HEX sRGB opaco a sei cifre, senza spazi. */
+export function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function assertFiniteHsl(h: number, s: number, l: number): void {
+  if (![h, s, l].every(Number.isFinite)) {
+    throw new RangeError("Le coordinate HSL devono essere numeri finiti.");
+  }
+}
 
 type ChannelRange = Readonly<{
   min: number;
@@ -76,6 +86,9 @@ function _powS(
 }
 
 export function hexToHsl(hex: string): Hsl {
+  if (!isHexColor(hex)) {
+    throw new TypeError("Il colore deve avere il formato #RRGGBB.");
+  }
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -113,6 +126,7 @@ export function hslToHex(
   saturationPercent: number,
   lightnessPercent: number,
 ): string {
+  assertFiniteHsl(hueDegrees, saturationPercent, lightnessPercent);
   const h = ((hueDegrees % 360) + 360) % 360;
   const s = Math.min(100, Math.max(0, saturationPercent)) / 100;
   const l = Math.min(100, Math.max(0, lightnessPercent)) / 100;
@@ -207,17 +221,26 @@ export function validateBioColor(
   component: BioComponent,
   normalize?: HslNormalizer,
 ): boolean {
-  const [h, s, l] = hexToHsl(hex);
+  if (
+    !isHexColor(hex) ||
+    (component !== "skin" && component !== "eyes" && component !== "hair")
+  ) {
+    return false;
+  }
 
-  const normalizedHsl: Hsl = normalize ? normalize(h, s, l) : [h, s, l];
+  const [h, s, l] = hexToHsl(hex);
+  const normalizedHsl = normalize ? normalize(h, s, l) : [h, s, l];
+
+  if (
+    !Array.isArray(normalizedHsl) ||
+    normalizedHsl.length !== 3 ||
+    !normalizedHsl.every(Number.isFinite)
+  ) {
+    return false;
+  }
 
   const [normalizedH, normalizedS, normalizedL] = normalizedHsl;
   const ranges = BIO_RANGES[component];
-
-  // Mantiene il fallback runtime delle precedente implementazione JavaScript.
-  if (!ranges) {
-    return false;
-  }
 
   return (
     normalizedH >= ranges.h.min &&
@@ -227,11 +250,4 @@ export function validateBioColor(
     normalizedL >= ranges.l.min &&
     normalizedL <= ranges.l.max
   );
-}
-
-export function normHex(hex: string, normalize: HslNormalizer): string {
-  const [h, s, l] = hexToHsl(hex);
-  const [normalizedH, normalizedS, normalizedL] = normalize(h, s, l);
-
-  return hslToHex(normalizedH, normalizedS, normalizedL);
 }

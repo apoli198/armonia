@@ -26,8 +26,10 @@ import {
   normBioSkin,
   normFabric,
   normHex,
+  isHexColor,
 } from "./color";
 import {
+  normalizeProfileReflexes,
   analyzeProfile,
   classifyContrastLevel,
   detectSeason as detectProfileSeason,
@@ -357,73 +359,43 @@ function FitBadge({ type, level }) {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function normalizeEntry(v) {
-  if (!v)
-    return {
-      hex: "#8B7355",
-      secondaries: [],
-      pattern: "solid",
-      material: "normal",
-    };
-  if (typeof v === "string")
-    return { hex: v, secondaries: [], pattern: "solid", material: "normal" };
+  const entry =
+    typeof v === "string"
+      ? { hex: v }
+      : v && typeof v === "object" && !Array.isArray(v)
+        ? v
+        : {};
+
   return {
-    hex: v.hex || "#8B7355",
-    secondaries: v.secondaries || [],
-    pattern: v.pattern || "solid",
-    material: v.material || "normal",
+    hex: isHexColor(entry.hex) ? entry.hex : "#8B7355",
+    secondaries: Array.isArray(entry.secondaries)
+      ? entry.secondaries
+          .filter(
+            (s) =>
+              s !== null &&
+              typeof s === "object" &&
+              isHexColor(s.hex) &&
+              Number.isFinite(s.pct) &&
+              s.pct >= 0 &&
+              s.pct <= 100,
+          )
+          .map((s) => ({ hex: s.hex, pct: s.pct }))
+      : [],
+    pattern: entry.pattern || "solid",
+    material: entry.material || "normal",
   };
 }
 
-function avgHue(weightedHues) {
-  const total = weightedHues.reduce((a, { w }) => a + w, 0);
-  if (!total) return 0;
-  const sx = weightedHues.reduce(
-    (a, { h, w }) => a + Math.cos((h * Math.PI) / 180) * w,
-    0,
-  );
-  const sy = weightedHues.reduce(
-    (a, { h, w }) => a + Math.sin((h * Math.PI) / 180) * w,
-    0,
-  );
-  return (
-    ((((Math.atan2(sy / total, sx / total) * 180) / Math.PI) % 360) + 360) % 360
-  );
-}
+function normalizeColorLists(value, keys) {
+  const input =
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
-function seededRand(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 1664525 + 1013904223) & 0xffffffff;
-    return (s >>> 0) / 0xffffffff;
-  };
-}
-
-function extractAnchorFromBiology(skin, eyes, hair) {
-  const [hSkN, , lSkN] = normBioSkin(...hexToHsl(skin));
-  const [hEyN] = normBioEyes(...hexToHsl(eyes));
-  const [hHrN, , lHrN] = normBioHair(...hexToHsl(hair));
-  const anchorH = avgHue([
-    { h: hSkN, w: 0.5 },
-    { h: hHrN, w: 0.4 },
-    { h: hEyN, w: 0.1 },
-  ]);
-  const profile = analyzeProfile(skin, eyes, hair, {
-    skin: "neutral",
-    eye: "neutral",
-    hair: "neutral",
-    hairVolume: "medium",
-  });
-  return {
-    anchorH,
-    contrastLevel: classifyContrastLevel(skin, hair),
-    undertone: profile.undertone,
-    depth: profile.depth,
-    intensity: profile.intensity,
-    utScore: profile.utScore,
-    depthScore: profile.depthScore,
-    intScore: profile.intScore,
-    deltaL: Math.abs(lSkN - lHrN),
-  };
+  return Object.fromEntries(
+    keys.map((key) => [
+      key,
+      Array.isArray(input[key]) ? input[key].filter(isHexColor) : [],
+    ]),
+  );
 }
 
 // ─── Options ──────────────────────────────────────────────────────────────────
@@ -1066,10 +1038,12 @@ const HARMONIES = [
 const HARMONY_NAME = Object.fromEntries(HARMONIES.map((h) => [h.id, h.name]));
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
-function lsGet(k, fb) {
+function lsGet(k, fb, validate = () => true) {
   try {
-    const v = localStorage.getItem(k);
-    return v != null ? JSON.parse(v) : fb;
+    const raw = localStorage.getItem(k);
+    if (raw === null) return fb;
+    const value = JSON.parse(raw);
+    return validate(value) ? value : fb;
   } catch {
     return fb;
   }
@@ -1347,6 +1321,7 @@ function ColorPickerModal({ value, onClose, onChange, savedColors }) {
   }, [pick, toCss]);
 
   const commit = (hex) => {
+    if (!isHexColor(hex)) return;
     onChange(hex);
     onClose();
   };
@@ -1468,6 +1443,7 @@ function ColorPickerModal({ value, onClose, onChange, savedColors }) {
             </div>
           </div>
           <button
+            disabled={!isHexColor(local)}
             onClick={() => commit(local)}
             style={{
               padding: "8px 14px",
@@ -1582,6 +1558,7 @@ function ColorPickerModal({ value, onClose, onChange, savedColors }) {
           />
           {imgSrc && (
             <button
+              disabled={!isHexColor(local)}
               onClick={() => commit(local)}
               style={{
                 marginTop: 8,
@@ -2543,30 +2520,23 @@ export default function App() {
   const [dark, toggleDark] = useDarkMode();
   const [tab, setTab] = useState("profile");
   const [skinColor, setSkinColor] = useState(() =>
-    lsGet("chs_skinColor", "#D4A574"),
+    lsGet("chs_skinColor", "#D4A574", isHexColor),
   );
   const [eyeColor, setEyeColor] = useState(() =>
-    lsGet("chs_eyeColor", "#6B4423"),
+    lsGet("chs_eyeColor", "#6B4423", isHexColor),
   );
   const [hairColor, setHairColor] = useState(() =>
-    lsGet("chs_hairColor", "#3D2B1F"),
+    lsGet("chs_hairColor", "#3D2B1F", isHexColor),
   );
   const [savedColors, setSavedColors] = useState(() =>
-    lsGet("chs_savedColors", { skin: [], eye: [], hair: [] }),
+    normalizeColorLists(lsGet("chs_savedColors", null), [
+      "skin",
+      "eye",
+      "hair",
+    ]),
   );
   const [reflexes, setReflexes] = useState(() =>
-    lsGet("chs_reflexes", {
-      skin: "neutral",
-      eye: "neutral",
-      hair: "neutral",
-      hairVolume: "medium",
-    }),
-  );
-  const [modes, setModes] = useState(() =>
-    lsGet("chs_modes", {
-      ...Object.fromEntries(GARMENTS.map((g) => [g.id, "auto"])),
-      cappello: "excluded",
-    }),
+    normalizeProfileReflexes(lsGet("chs_reflexes", null)),
   );
   const [fixedColors, setFixedColors] = useState(() => {
     const saved = lsGet("chs_fixedColors", null);
@@ -2587,9 +2557,9 @@ export default function App() {
     );
   });
   const [savedGarment, setSavedGarment] = useState(() =>
-    lsGet(
-      "chs_savedGarment",
-      Object.fromEntries(GARMENTS.map((g) => [g.id, []])),
+    normalizeColorLists(
+      lsGet("chs_savedGarment", null),
+      GARMENTS.map((g) => g.id),
     ),
   );
   const [comboCount, setComboCount] = useState(() =>

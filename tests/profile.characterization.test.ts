@@ -297,17 +297,17 @@ describe("profile analysis characterization", () => {
   );
 
   it("preserves fallbacks for unknown persisted option values", () => {
-    // @ts-expect-error Simulates legacy data that bypassed runtime validation.
-    const invalid: ProfileReflexes = {
+    const invalid = {
       skin: "unknown",
       eye: "unknown",
       hair: "unknown",
       hairVolume: "unknown",
     };
 
-    expect(analyzeProfile(...DEFAULT_COLORS, invalid)).toEqual(
-      analyzeProfile(...DEFAULT_COLORS),
-    );
+    // @ts-expect-error Simulates legacy data that bypassed runtime validation.
+    const result = analyzeProfile(...DEFAULT_COLORS, invalid);
+
+    expect(result).toEqual(analyzeProfile(...DEFAULT_COLORS));
   });
 
   it.each([

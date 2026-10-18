@@ -16,6 +16,34 @@ export type ProfileReflexes = Readonly<{
   hairVolume?: HairVolume;
 }>;
 
+export type NormalizedProfileReflexes = Readonly<Required<ProfileReflexes>>;
+
+/** Ripristina i default per opzioni mancanti o non riconosciute. */
+export function normalizeProfileReflexes(
+  value: unknown,
+): NormalizedProfileReflexes {
+  const input =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const { skin, eye, hair, hairVolume } = input;
+
+  return {
+    skin: skin === "warm" || skin === "cool" ? skin : "neutral",
+    eye:
+      eye === "golden" || eye === "green" || eye === "grey" ? eye : "neutral",
+    hair:
+      hair === "copper" || hair === "golden" || hair === "ashy"
+        ? hair
+        : "neutral",
+    hairVolume:
+      hairVolume === "shaved" || hairVolume === "low" || hairVolume === "high"
+        ? hairVolume
+        : "medium",
+  };
+}
+
 export type ProfileAnalysis = Readonly<{
   undertone: Undertone;
   depth: Depth;
@@ -77,6 +105,7 @@ export function analyzeProfile(
   hair: string,
   reflexes?: ProfileReflexes | null,
 ): ProfileAnalysis {
+  const options = normalizeProfileReflexes(reflexes);
   const [hSk, sSk, lSk] = normBioSkin(...hexToHsl(skin));
   const [hEy, sEy, lEy] = normBioEyes(...hexToHsl(eyes));
   const [hHr, sHr, lHr] = normBioHair(...hexToHsl(hair));
@@ -85,7 +114,7 @@ export function analyzeProfile(
   const hairReflectivity =
     sHr * Math.sin((Math.max(0, lHr - 5) / 77) * Math.PI);
   const hairReflNorm = hairReflectivity / 55;
-  const volMult = VOLUME_MULT[reflexes?.hairVolume ?? "medium"] ?? 0.75;
+  const volMult = VOLUME_MULT[options.hairVolume ?? "medium"] ?? 0.75;
   const hairSignalWeight = hairReflNorm * volMult;
 
   const skinHueValid = sSk > 3;
@@ -120,15 +149,15 @@ export function analyzeProfile(
   );
   const reflexScale = Math.max(0.15, 1 - distToThreshold / 0.5);
 
-  if (reflexes?.skin) {
-    utScore += (REFLEX_UNDERTONE.skin[reflexes.skin] ?? 0) * reflexScale;
+  if (options.skin) {
+    utScore += (REFLEX_UNDERTONE.skin[options.skin] ?? 0) * reflexScale;
   }
-  if (reflexes?.eye) {
-    utScore += (REFLEX_UNDERTONE.eye[reflexes.eye] ?? 0) * reflexScale;
+  if (options.eye) {
+    utScore += (REFLEX_UNDERTONE.eye[options.eye] ?? 0) * reflexScale;
   }
-  if (reflexes?.hair) {
+  if (options.hair) {
     utScore +=
-      (REFLEX_UNDERTONE.hair[reflexes.hair] ?? 0) * reflexScale * volMult;
+      (REFLEX_UNDERTONE.hair[options.hair] ?? 0) * reflexScale * volMult;
   }
 
   const undertone: Undertone =
@@ -160,8 +189,8 @@ export function analyzeProfile(
     neutral: hairSNorm,
   };
 
-  const eyeIntVal = eyeIntensity[reflexes?.eye ?? "neutral"] ?? eyeSNorm;
-  const hairIntVal = hairIntensity[reflexes?.hair ?? "neutral"] ?? hairSNorm;
+  const eyeIntVal = eyeIntensity[options.eye ?? "neutral"] ?? eyeSNorm;
+  const hairIntVal = hairIntensity[options.hair ?? "neutral"] ?? hairSNorm;
   const contrastBonus = Math.abs(lSk - lHr) / 82;
 
   // Conserva ordine delle operazioni e assenza di clamp della baseline.
