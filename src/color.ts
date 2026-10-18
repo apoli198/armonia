@@ -251,3 +251,10 @@ export function validateBioColor(
     normalizedL <= ranges.l.max
   );
 }
+
+export function normHex(hex: string, normalize: HslNormalizer): string {
+  const [h, s, l] = hexToHsl(hex);
+  const [normalizedH, normalizedS, normalizedL] = normalize(h, s, l);
+
+  return hslToHex(normalizedH, normalizedS, normalizedL);
+}
