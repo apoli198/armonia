@@ -1,112 +1,121 @@
-# Istruzioni per assistenti di sviluppo
+# Istruzioni di lavoro — Armonia
 
-## Contesto
+## Obiettivo
 
-Il progetto si chiama **Armonia**. È una web app/PWA React dedicata all'analisi cromatica personale e alla proposta di combinazioni di colori per l'abbigliamento.
+Sviluppare una web app/PWA React affidabile per l'analisi cromatica personale
+e le combinazioni di abbigliamento, imparando TypeScript attraverso il progetto.
 
-La repository è la fonte primaria del contesto di progetto. Non assumere informazioni provenienti da conversazioni esterne non registrate nei file del repository.
+Il codice iniziale è stato generato da AI. Non assumere che formule, commenti,
+nomi, soglie o scelte architetturali siano corretti o giustificati.
 
-## Ordine di lettura
+## Fonti del progetto
 
-Prima di proporre o applicare modifiche sostanziali, leggere:
+- Repository ufficiale: https://github.com/apoli198/armonia
+- Prima di analizzare il progetto, leggere il branch main aggiornato su GitHub.
+- Leggere README.md, docs/PROJECT_STATUS.md e i file coinvolti.
+- Per il motore leggere anche docs/COLOR_ENGINE_SPEC.md e le fonti pertinenti.
+- Segnalare contraddizioni tra codice, test, documentazione ed evidenze.
+- Le nuove istruzioni esplicite del proprietario prevalgono sui documenti.
 
-1. `docs/INDEX.md`
-2. `docs/PROJECT_STATUS.md`
-3. `docs/DECISIONS.md`
-4. `docs/ARCHITECTURE.md`
-5. `docs/COLOR_ENGINE_SPEC.md`
-6. `docs/VALIDATION_PLAN.md`
-7. i file di codice direttamente coinvolti
+## Consegna e operatività
 
-Per modifiche a prodotto, UX o roadmap, leggere anche `docs/PRODUCT_REQUIREMENTS.md` e `docs/ROADMAP.md`.
+- Fornire codice e documenti direttamente in chat.
+- Per ogni documento modificato fornire l'intero contenuto aggiornato:
+  niente frammenti, patch o sezioni da assemblare.
+- Fornire integralmente ogni nuovo file di codice.
+- Per modifiche mirate a file di codice esistenti sono ammesse sostituzioni
+  precise; se viene richiesto il file completo, riportarlo senza omissioni.
+- Usare GitHub esclusivamente per lettura e verifica.
+- Non modificare risorse remote e non eseguire autonomamente commit, push,
+  merge o apertura di pull request.
+- Il proprietario applica e verifica le modifiche nella propria working copy.
+- Prima delle modifiche indicare obiettivo, file coinvolti, rischi,
+  istruzioni di applicazione e criteri di completamento.
+- Valutare gli output reali prima di dichiarare riusciti test, type-check,
+  build o verifiche manuali. Distinguere eventuali prove temporanee dalle
+  verifiche eseguite sulla working copy.
 
-## Priorità
+## Metodo per ogni incremento
 
-1. Migrazione progressiva a TypeScript.
-2. Isolamento del dominio cromatico dalla UI.
-3. Revisione scientifica e matematica del motore.
-4. Test automatici e validazione riproducibile.
-5. UI, UX e design system.
-6. Monetizzazione pubblicitaria.
-7. Packaging e distribuzione sugli store.
+1. Ricostruire il comportamento del blocco e le sue dipendenze.
+2. Revisionare matematica, significato delle grandezze e fondamento scientifico.
+3. Individuare errori, assunzioni, euristiche e limiti delle evidenze.
+4. Definire contratti TypeScript e controlli runtime.
+5. Implementare l'estrazione e le correzioni motivate.
+6. Aggiungere i test appropriati e confrontare i cambiamenti con la baseline.
+7. Verificare l'integrazione e aggiornare soltanto la documentazione necessaria.
 
-La correttezza del motore prevale sulla rifinitura visiva.
+Non usare deadline, calendari, stime temporali o scadenze per guidare il lavoro.
+Procedere per dipendenze, priorità e criteri di completamento.
 
-## Regole scientifiche
+## Imparare facendo
 
-- Trattare il motore corrente come un insieme di euristiche non validate.
-- Non descrivere un risultato come scientificamente corretto solo perché il codice compila o i test passano.
-- Distinguere sempre tra standard colorimetrici, risultati empirici, ipotesi, euristiche e decisioni di prodotto.
-- Ogni nuova formula, soglia, peso o classificazione deve avere almeno uno dei seguenti stati documentati:
-  - derivata da standard;
-  - derivata da fonte primaria;
-  - stimata da dataset;
-  - euristica esplicita;
-  - ipotesi da validare.
-- Non introdurre il termine “scientifico” nella UI o nei metadati finché i criteri in `docs/VALIDATION_PLAN.md` non sono soddisfatti.
-- Non usare etichette di esperti come verità assoluta: misurare anche accordo tra valutatori e incertezza.
+- Spiegare le scelte TypeScript nel punto in cui vengono introdotte.
+- Collegare tipi, union, tuple, narrowing e generics a necessità reali del codice.
+- Distinguere controlli statici, validazione runtime e correttezza del modello.
+- Spiegare anche il comportamento JavaScript che stiamo sostituendo.
+- Evitare astrazioni introdotte soltanto per mostrare una funzionalità del linguaggio.
+- Tenere le spiegazioni didattiche in chat; non accumulare tutorial nei documenti.
 
-## Regole tecniche
+## Revisione scientifica
 
-- Conservare React e Vite salvo decisione architetturale esplicita.
-- Migrare in modo incrementale; evitare riscritture complete.
-- Estrarre prima le funzioni pure, poi i componenti, quindi lo stato e i servizi.
-- Evitare modifiche simultanee a logica scientifica e presentazione nello stesso intervento, salvo necessità motivata.
-- Non aggiungere dipendenze senza una necessità concreta e documentata.
-- Preservare il comportamento esistente durante la migrazione, usando test di caratterizzazione quando il comportamento non è ancora validato.
-- La compatibilità PWA e il funzionamento locale devono rimanere verificabili dopo ogni milestone.
-- Non inserire segreti o identificativi di provider nel codice client.
-- Il provider pubblicitario deve essere isolato dietro un adapter o componente dedicato.
+- Ogni incremento del motore comprende la revisione delle formule coinvolte.
+- Usare fonti primarie per colorimetria, matematica e risultati sperimentali.
+- Documentare unità, intervalli, assunzioni e provenienza di soglie e pesi.
+- Distinguere conformità a standard, verifica implementativa,
+  validazione sperimentale e utilità di prodotto.
+- Correggere gli errori dimostrati con test di regressione.
+- I test di caratterizzazione descrivono la baseline:
+  non obbligano a conservarne gli errori.
+- Non sostituire coefficienti arbitrari con altri coefficienti arbitrari
+  presentandoli come una correzione scientifica.
+- Isolare le euristiche ancora necessarie e dichiararne i limiti.
+- Se mancano dati o esperimenti, indicare cosa resta non validato.
+- Non inventare fonti, risultati, benchmark, probabilità o livelli di confidenza.
 
-## Modalità operativa con GitHub
+## Vincoli tecnici
 
-- Usare GitHub e i relativi connettori esclusivamente per operazioni di lettura e verifica.
-- Non creare o modificare branch, file, commit, issue, pull request, commenti, label o altre risorse remote.
-- Non eseguire autonomamente `git commit`, `git push`, merge o apertura di pull request.
-- Le modifiche al repository locale devono essere descritte passo passo affinché il proprietario possa applicarle, verificarle e comprenderle.
-- Prima di ogni modifica indicare obiettivo, file coinvolti, comandi da eseguire, risultato atteso e controlli successivi.
-- Analizzare gli output reali forniti dal proprietario prima di considerare riuscita un’installazione, un type-check, una build o un test.
-- GitHub rimane la fonte primaria per leggere lo stato aggiornato del branch `main`; la working copy locale del proprietario è l’ambiente in cui applicare e verificare le modifiche.
+- Conservare React e Vite; migrare progressivamente a TypeScript.
+- Nessuna riscrittura completa senza una necessità dimostrata.
+- Estrarre blocchi coerenti, iniziando dalla logica pura.
+- Separare dominio, UI, stato, persistenza e integrazioni esterne.
+- Il dominio non deve dipendere da React, DOM o localStorage.
+- Evitare any; modellare esplicitamente gli insiemi finiti.
+- Validare i dati esterni e persistiti prima di considerarli conformi ai tipi.
+- Rendere il motore deterministico; passare esplicitamente il seed quando serve.
+- Non introdurre dipendenze, backend o infrastrutture senza una necessità concreta.
+- Separare le modifiche al motore da quelle alla presentazione, salvo necessità.
+- Preservare i dati salvati o definire una migrazione verificabile.
+- Mantenere accessibilità, responsive design e funzionamento PWA.
+- Non inserire segreti, dati personali o materiale non redistribuibile.
+- Non aggiungere automaticamente una licenza.
+- Il proprietario decide quando registrare o pubblicare le modifiche.
 
-## TypeScript
+## Verifiche
 
-- Evitare `any` salvo confine esterno non tipizzabile e motivato.
-- Modellare esplicitamente colori, profili, stagioni, capi, armonie, risultati e livelli di confidenza.
-- Usare union type per domini finiti.
-- Validare i dati persistiti prima di considerarli conformi ai tipi TypeScript.
-- Non confondere la tipizzazione statica con la validazione runtime.
+Usare i controlli pertinenti all'intervento:
 
-## Test
+- conformità numerica a riferimenti e tolleranze dichiarate;
+- caratterizzazione della baseline;
+- proprietà, casi limite e regressioni;
+- validazione su dati quando si fanno affermazioni empiriche;
+- npm test;
+- npm run typecheck;
+- npm run build;
+- verifica manuale delle funzionalità coinvolte e della PWA.
 
-- Aggiungere test insieme alla logica estratta o modificata.
-- Separare:
-  - test di conversione e conformità a standard;
-  - test di caratterizzazione del comportamento corrente;
-  - test di proprietà e invarianti;
-  - test di validazione su dataset;
-  - test UI.
-- I test di caratterizzazione devono essere chiaramente identificati: preservano il comportamento, non ne provano la correttezza scientifica.
-- Ogni bug scientifico corretto deve produrre un caso di regressione.
+Un controllo positivo non dimostra automaticamente la correttezza degli altri aspetti.
 
-## Documentazione
+## Documentazione temporanea
 
-Aggiornare i documenti interessati quando una modifica cambia:
+AGENTS.md e i documenti in docs/ servono a sostenere lo sviluppo corrente.
 
-- architettura;
-- assunzioni del motore;
-- fonti;
-- protocollo di validazione;
-- roadmap;
-- stato delle decisioni.
-
-Registrare le decisioni irreversibili o costose in `docs/DECISIONS.md`.
-
-## Strategia dei branch
-
-- `main` è il branch principale di sviluppo e deve rimanere funzionante e verificabile.
-- Le modifiche devono essere incrementali e registrate mediante commit piccoli e coerenti.
-- Prima di pubblicare modifiche su `main` devono essere eseguiti tutti i controlli disponibili pertinenti, inclusi type-check, test, build e verifica manuale.
-- I branch temporanei sono facoltativi e devono essere usati solo per attività concorrenti, rischiose, sperimentali o di lunga durata.
-- I branch temporanei devono essere eliminati dopo l’integrazione.
-- Non viene mantenuto un branch `dev` permanente.
-- Non prescrivere automaticamente commit o push dopo ogni intervento. Il proprietario decide quando registrarli; segnalare un punto consigliato per commit solo per modifiche critiche, rischiose o logicamente complete.
+- Conservare problemi aperti, vincoli attivi e informazioni necessarie al prossimo lavoro.
+- Eliminare attività concluse, piani superati, duplicazioni e strutture ipotetiche.
+- Non usare i documenti come diario delle conversazioni o registro di ogni intervento.
+- Mantenere una sola sede per ciascuna informazione.
+- Trasferire contratti e fonti indispensabili vicino al codice e ai test pertinenti.
+- A conclusione dello sviluppo rimuovere i documenti temporanei, dopo aver
+  conservato nel README e nel codice le informazioni necessarie all'uso
+  e alla manutenzione.
+- Quando un documento viene rimosso, aggiornare anche tutti i riferimenti.

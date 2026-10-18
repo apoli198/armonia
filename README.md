@@ -1,103 +1,96 @@
 # Armonia
 
-Armonia è una web app/PWA React per l'analisi cromatica personale e la generazione di combinazioni di colori per l'abbigliamento.
+Armonia è una web app/PWA React per l'analisi cromatica personale
+e la generazione di combinazioni di abbigliamento.
 
-Il progetto è in una fase di ristrutturazione. Le priorità attuali sono:
+Il progetto viene sviluppato per incrementi, con due obiettivi:
+costruire un'app affidabile e imparare TypeScript lavorando sul codice reale.
 
-1. migrare progressivamente il codice da JavaScript a TypeScript;
-2. isolare il motore cromatico dalla UI;
-3. sottoporre formule, soglie e classificazioni a revisione scientifica;
-4. costruire test automatici e un processo di validazione riproducibile;
-5. migliorare successivamente esperienza utente e identità visiva.
+> Il motore corrente contiene euristiche non validate.
+> La classificazione stagionale non è una misura scientifica o una diagnosi.
+> Un colore campionato da una fotografia non calibrata non equivale
+> a una misura del colore fisico.
 
-> Stato scientifico: il motore corrente contiene euristiche non ancora validate. I risultati non devono essere presentati come misurazioni scientifiche o diagnosi.
+## Funzionalità attuali
 
-## Stato attuale
+- Selezione manuale dei colori di pelle, occhi e capelli.
+- Campionamento da un'immagine caricata.
+- Selezione di riflessi e volume dei capelli.
+- Classificazione euristica nel modello a 12 stagioni.
+- Configurazione dei capi come automatici, fissi o esclusi.
+- Generazione di combinazioni di colori e valutazioni euristiche.
+- Salvataggio locale delle preferenze.
+- Interfaccia mobile con tema chiaro e scuro.
+- Configurazione PWA per installazione e cache offline.
+
+## Base tecnica
 
 - React 18 e Vite 5.
-- PWA tramite `vite-plugin-pwa`.
-- Persistenza locale tramite `localStorage`.
-- Deploy configurato per Netlify.
-- Interfaccia mobile-first con modalità chiara e scura.
-- Analisi di pelle, occhi e capelli.
-- Classificazione nel modello a 12 stagioni.
-- Generazione di outfit mediante armonie cromatiche e pesi visivi dei capi.
-- Selezione manuale dei colori e campionamento da immagine.
+- JavaScript/JSX con migrazione progressiva a TypeScript.
+- Vitest per i test.
+- localStorage per la persistenza.
+- vite-plugin-pwa per la PWA.
+- Configurazione di deploy Netlify presente.
 
-La quasi totalità dell'applicazione è ancora contenuta in `src/App.jsx`. Il blocco cromatico di base è stato estratto in `src/color.ts`, primo modulo TypeScript del dominio indipendente da React.
+La maggior parte dell'applicazione è ancora in src/App.jsx.
+Il modulo src/color.ts contiene conversioni HEX/HSL e trasformazioni
+euristiche già estratte, ma ancora da revisionare e correggere.
 
-Il modulo comprende:
-
-- rappresentazione HSL tipizzata;
-- conversioni tra colore esadecimale e HSL;
-- normalizzazioni euristiche per tessuto, pelle, occhi e capelli;
-- range biologici euristici;
-- validazione dei colori biologici.
-
-I relativi test di caratterizzazione sono eseguiti con Vitest. I 53 test correnti coprono conversioni, round trip, normalizzazione della hue, clamp, curve di normalizzazione, valori fuori dagli intervalli nominali, range biologici e validazione.
-
-Questi test preservano il comportamento della baseline durante la migrazione, ma non costituiscono una validazione scientifica del modello HSL, delle curve o dei range biologici.
-
-La validazione biologica è attualmente disponibile nel dominio e coperta da test, ma non è ancora collegata alla UI.
-
-Il resto del motore, la persistenza e la maggior parte della UI restano temporaneamente in JavaScript/JSX. Linting e CI non sono ancora presenti.
+Ogni incremento del motore comprende analisi del comportamento,
+revisione matematica e scientifica, contratti TypeScript e test.
+La migrazione non deve conservare errori dimostrati.
 
 ## Avvio locale
 
-Requisiti:
-
-- Node.js supportato dalla versione di Vite installata;
-- npm.
+Usare una versione di Node.js compatibile con le dipendenze del progetto e npm.
 
 ```bash
 npm ci
-npm run typecheck
-npm test
 npm run dev
 ```
 
-Build di produzione:
+## Verifica e build
 
 ```bash
-npm run typecheck
 npm test
+npm run typecheck
 npm run build
 npm run preview
 ```
 
-## Documentazione
+I test di caratterizzazione presenti descrivono il comportamento precedente.
+Non costituiscono da soli una validazione scientifica del motore.
 
-La documentazione di progetto è indicizzata in [`docs/INDEX.md`](docs/INDEX.md).
+## Direzione del prodotto
 
-Prima di modificare il motore cromatico, leggere almeno:
+La priorità è l'affidabilità del motore, seguita da semplicità d'uso
+e coerenza visiva. Il primo risultato deve richiedere pochi passaggi,
+con dettagli avanzati accessibili successivamente.
 
-- [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
-- [`docs/COLOR_ENGINE_SPEC.md`](docs/COLOR_ENGINE_SPEC.md)
-- [`docs/SCIENTIFIC_SOURCES.md`](docs/SCIENTIFIC_SOURCES.md)
-- [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)
-- [`docs/DECISIONS.md`](docs/DECISIONS.md)
+L'obiettivo di accessibilità è WCAG 2.2 AA.
+Gli effetti ispirati ai pattern Apple e Liquid Glass non devono alterare
+la percezione dei campioni cromatici o compromettere la leggibilità.
 
-## Roadmap
+La distribuzione parte dal web/PWA. Pubblicità e store saranno affrontati
+quando esisteranno requisiti e condizioni concrete per sostenerli.
+Eventuali inserzioni dovranno essere isolate dal motore e dai campioni,
+senza interrompere il percorso verso il primo risultato.
 
-La roadmap corrente è in [`docs/ROADMAP.md`](docs/ROADMAP.md). L'obiettivo per l'inizio di settembre 2026 è una beta web coerente, verificabile e presentabile, con priorità alla correttezza del motore rispetto alla rifinitura grafica.
+## Documentazione di sviluppo
 
-## Distribuzione
+- [Metodo di lavoro](AGENTS.md)
+- [Stato e prossimo incremento](docs/PROJECT_STATUS.md)
+- [Revisione del motore e verifiche](docs/COLOR_ENGINE_SPEC.md)
+- [Fonti pertinenti](docs/SCIENTIFIC_SOURCES.md)
 
-La sequenza prevista è:
+Questi documenti sono temporanei: vengono snelliti durante lo sviluppo
+e rimossi quando non sono più necessari.
 
-1. web app/PWA;
-2. crescita dell'utenza e sperimentazione della monetizzazione pubblicitaria;
-3. validazione della sostenibilità economica;
-4. eventuale distribuzione su Play Store e App Store.
+## Repository e licenza
 
-TypeScript è una scelta di manutenibilità e verificabilità; non è di per sé un requisito per la pubblicazione sugli store.
+Repository ufficiale: https://github.com/apoli198/armonia
 
-## Repository
-
-Repository canonica: https://github.com/apoli198/armonia
-
-La repository è pensata anche come progetto portfolio. Dataset proprietari, credenziali, dati personali e materiale non redistribuibile non devono essere inclusi.
-
-## Licenza
+Il repository è destinato anche all'uso come portfolio.
+Non includere segreti, dati personali o materiale non redistribuibile.
 
 Licenza non ancora definita.

@@ -27,6 +27,11 @@ import {
   normFabric,
   normHex,
 } from "./color";
+import {
+  analyzeProfile,
+  classifyContrastLevel,
+  detectSeason as detectProfileSeason,
+} from "./profile";
 
 // ─── Color math ───────────────────────────────────────────────
 function contrastColor(hex) {
@@ -67,13 +72,6 @@ function computeGarmentWeights(presentIds) {
   for (const [id, val] of Object.entries(w))
     result[id] = total > 0 ? Math.round((val / total) * 100) : 0;
   return result;
-}
-
-function classifyContrastLevel(skin, hair) {
-  const [, , lSkinN] = normBioSkin(...hexToHsl(skin));
-  const [, , lHairN] = normBioHair(...hexToHsl(hair));
-  const deltaL = Math.abs(lSkinN - lHairN);
-  return deltaL > 45 ? "high" : deltaL > 22 ? "medium" : "low";
 }
 
 // ─── 12-season system ─────────────────────────────────────────────────────────
@@ -453,159 +451,13 @@ const HAIR_VOLUME_OPTIONS = [
   { id: "high", label: "Lungo" },
 ];
 
-// ─── Profile analysis ─────────────────────────────────────────────────────────
-// Undertone pipeline:
-//   1. Biological signals combined with dynamic hair weight (reflectivity × volume)
-//   2. Reflex pickers applied with reflexScale — effect is strongest near classification
-//      thresholds (|utScore - threshold| small) and attenuated when score is far from them.
-//      This prevents pickers from overriding a strongly-classified profile while still
-//      resolving borderline cases.
-//
-// Intensity pipeline:
-//   Reflex pickers are the primary signal (0..1 scale), normalized S values are fallback
-//   when picker is "neutral". This replaces the previous additive delta approach.
-//
-// Depth: unchanged — L of skin/hair/eyes only, no picker.
-
-function analyzeProfile(skin, eyes, hair, reflexes) {
-  const [hSk, sSk, lSk] = normBioSkin(...hexToHsl(skin));
-  const [hEy, sEy, lEy] = normBioEyes(...hexToHsl(eyes));
-  const [hHr, sHr, lHr] = normBioHair(...hexToHsl(hair));
-
-  // ── Hair signal weight: reflectivity × volume ──────────────────────────────
-  // reflectivity peaks at L≈41 (midpoint of [5,82]), zero at L=5 or L=82, zero at S=0
-  const hairReflectivity =
-    sHr * Math.sin((Math.max(0, lHr - 5) / 77) * Math.PI); // 0..55*1=55
-  const hairReflNorm = hairReflectivity / 55; // 0..1
-  const VOLUME_MULT = { shaved: 0.1, low: 0.4, medium: 0.75, high: 1.0 };
-  const volMult = VOLUME_MULT[reflexes?.hairVolume] ?? 0.75;
-  const hairSignalWeight = hairReflNorm * volMult; // 0..1, scales the 0.50 hair slot
-
-  // Biological undertone scores (each roughly -1..+1, warm positive)
-  const skinHueValid = sSk > 3;
-  let skinUt = skinHueValid
-    ? Math.max(-1.5, Math.min(1.5, (hSk - 22) / 22))
-    : 0;
-
-  let hairUt = 0;
-  if (lHr > 12 && sHr > 5) {
-    hairUt = Math.max(-1, Math.min(1, (hHr - 30) / 40));
-  }
-
-  let eyeUt = 0;
-  if (sEy > 12) {
-    if (hEy > 75 && hEy < 170) eyeUt = -0.2;
-    else if (hEy > 170 && hEy < 250) eyeUt = -0.35;
-    else if (hEy < 45 || hEy > 320) eyeUt = +0.25;
-  } else {
-    eyeUt = lEy < 20 ? 0 : -0.15;
-  }
-
-  // Dynamic weights: hair weight scales with signal strength, skin fills the gap
-  const hairW = hairSignalWeight * 0.5;
-  const skinW = 0.5 - hairW * 0.3; // skin gives up some weight as hair gains
-  const eyeW = 0.15;
-  const total = hairW + skinW + eyeW;
-  let utScore = (skinUt * skinW + hairUt * hairW + eyeUt * eyeW) / total;
-
-  // Reflex pickers: apply with scale proportional to proximity to nearest threshold
-  // Thresholds: warm > 0.12, cool < -0.18, neutral in between
-  const WARM_T = 0.12,
-    COOL_T = -0.18;
-  const distToThreshold = Math.min(
-    Math.abs(utScore - WARM_T),
-    Math.abs(utScore - COOL_T),
-  );
-  const reflexScale = Math.max(0.15, 1 - distToThreshold / 0.5);
-
-  const RUT = {
-    skin: { warm: +0.5, cool: -0.5, neutral: 0 },
-    eye: { golden: +0.15, green: -0.08, grey: -0.18, neutral: 0 },
-    hair: { copper: +0.28, golden: +0.18, ashy: -0.22, neutral: 0 },
-  };
-  // Hair reflex also modulated by volume (low volume → less impact)
-  const hairReflexMult = volMult;
-  if (reflexes?.skin) utScore += (RUT.skin[reflexes.skin] ?? 0) * reflexScale;
-  if (reflexes?.eye) utScore += (RUT.eye[reflexes.eye] ?? 0) * reflexScale;
-  if (reflexes?.hair)
-    utScore += (RUT.hair[reflexes.hair] ?? 0) * reflexScale * hairReflexMult;
-
-  const undertone =
-    utScore > WARM_T ? "warm" : utScore < COOL_T ? "cool" : "neutral";
-
-  // ── Depth ──────────────────────────────────────────────────────────────────
-  const depthScore = 100 - (lSk * 0.55 + lHr * 0.35 + lEy * 0.1);
-  const depth = depthScore > 48 ? "deep" : "light";
-
-  // ── Intensity ──────────────────────────────────────────────────────────────
-  // Eye picker is primary (0..1), hair picker secondary, skin S as tertiary fallback.
-  // "neutral" picker → use normalized S value of that component as fallback signal.
-  const eyeSNorm = sEy / 72; // normBioEyes maxS=72
-  const hairSNorm = sHr / 55; // normBioHair maxS=55
-  const skinSNorm = sSk / 38; // normBioSkin maxS=38
-
-  const EYE_INT = { golden: 0.78, green: 0.62, grey: 0.28, neutral: eyeSNorm };
-  const HAIR_INT = {
-    copper: 0.88,
-    golden: 0.65,
-    ashy: 0.28,
-    neutral: hairSNorm,
-  };
-
-  const eyeIntVal = EYE_INT[reflexes?.eye ?? "neutral"] ?? eyeSNorm;
-  const hairIntVal = HAIR_INT[reflexes?.hair ?? "neutral"] ?? hairSNorm;
-
-  // Contrast bonus: high skin/hair ΔL → higher intensity (normalized to 0..1)
-  const contrastBonus = Math.abs(lSk - lHr) / 82;
-
-  let intScore =
-    eyeIntVal * 0.5 + hairIntVal * 0.3 + skinSNorm * 0.2 + contrastBonus * 0.15;
-  // Normalize to roughly 0..100 for threshold compatibility
-  intScore *= 100;
-
-  const intensity = intScore > 55 ? "high" : intScore < 30 ? "low" : "medium";
-
-  return { undertone, depth, intensity, utScore, depthScore, intScore };
-}
-
-// ─── Season detection ─────────────────────────────────────────────────────────
+// ─── Season presentation adapter ──────────────────────────────────────────────
 function detectSeason(skin, eyes, hair, reflexes) {
-  const p = analyzeProfile(skin, eyes, hair, reflexes);
-  const { undertone, depth, intensity } = p;
+  const result = detectProfileSeason(skin, eyes, hair, reflexes);
+  const seasonData =
+    SEASONS[`${result.base}-${result.sub}`] || SEASONS[`${result.base}-true`];
 
-  let base, sub;
-  if (undertone === "warm" && depth === "light") {
-    base = "spring";
-    sub =
-      intensity === "low" ? "light" : intensity === "high" ? "warm" : "true";
-  } else if (undertone === "warm" && depth === "deep") {
-    base = "autumn";
-    sub =
-      intensity === "high" ? "deep" : intensity === "medium" ? "warm" : "true";
-  } else if (undertone === "cool" && depth === "light") {
-    base = "summer";
-    sub =
-      intensity === "low" ? "soft" : intensity === "high" ? "true" : "light";
-  } else if (undertone === "cool" && depth === "deep") {
-    base = "winter";
-    sub =
-      intensity === "low" ? "cool" : intensity === "high" ? "bright" : "true";
-  } else {
-    base = depth === "light" ? "summer" : "winter";
-    sub =
-      intensity === "low"
-        ? depth === "light"
-          ? "soft"
-          : "cool"
-        : intensity === "high"
-          ? depth === "light"
-            ? "true"
-            : "bright"
-          : "true";
-  }
-
-  const seasonData = SEASONS[`${base}-${sub}`] || SEASONS[`${base}-true`];
-  return { ...seasonData, ...p, base, sub };
+  return { ...seasonData, ...result };
 }
 
 // ─── Harmony pool ─────────────────────────────────────────────────────────────

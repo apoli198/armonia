@@ -1,262 +1,179 @@
-# Specifica del motore cromatico
+# Motore cromatico: revisione aperta
 
-## Stato
+Questo documento raccoglie soltanto i problemi e le verifiche ancora necessari.
+Non certifica il motore corrente. Contratti, formule e fonti stabilizzati
+devono essere trasferiti vicino al codice e ai test, eliminando qui
+le sezioni corrispondenti.
 
-Il motore attuale è una baseline euristica. Questa specifica descrive ciò che esiste e il contratto verso cui migrare; non certifica la validità scientifica delle formule correnti.
+## Confini da rispettare
 
-## Obiettivi del motore
+Separare:
 
-Il dominio deve supportare separatamente:
+- rappresentazione e conversione dei colori;
+- qualità e provenienza dell'input;
+- caratteristiche del profilo;
+- classificazione estetica;
+- compatibilità personale;
+- armonia tra colori;
+- generazione e ranking degli outfit.
 
-1. acquisizione e rappresentazione del colore;
-2. analisi delle caratteristiche cromatiche personali;
-3. classificazione in uno o più modelli estetici;
-4. valutazione della compatibilità di un colore;
-5. valutazione dell'armonia tra più colori;
-6. generazione e ranking degli outfit;
-7. stima dell'incertezza.
+Una conversione corretta non valida le decisioni estetiche costruite sopra di essa.
 
-Queste operazioni non devono essere fuse in un unico punteggio opaco.
+## Blocco colore
 
-## Baseline corrente
+### Conversioni HEX/HSL
 
-### Rappresentazione
+Le formule correnti sono coerenti con le conversioni sRGB/HSL
+nel dominio degli input validi esaminato.
 
-- Input principale: stringhe esadecimali sRGB.
-- Spazio di lavoro: HSL derivato direttamente da sRGB codificato.
-- Output: colori esadecimali.
+Restano da definire e verificare:
 
-### Normalizzazione “screen to real-world”
+- formati HEX accettati;
+- unità e intervalli HSL;
+- trattamento di NaN, infiniti e valori finiti fuori intervallo;
+- significato della hue per i colori acromatici;
+- precisione, arrotondamento e tolleranze;
+- gestione degli errori nei chiamanti e nella persistenza.
 
-Il codice applica:
+HSL è una rappresentazione utile per controlli e trasformazioni cromatiche.
+La sua lightness non coincide con luminanza o chiarezza percettiva.
+Le sue distanze non vanno trattate automaticamente come differenze percepite.
 
-- una power law alla saturazione;
-- una sigmoide alla lightness;
-- parametri distinti per tessuto, pelle, occhi e capelli.
+### Trasformazioni euristiche
 
-Parametri correnti:
+normFabric, normBioSkin, normBioEyes e normBioHair applicano potenze
+alla saturazione e sigmoidali alla lightness.
 
-| Superficie | Gamma saturazione | Saturazione massima | Lightness normalizzata |
-| ---------- | ----------------: | ------------------: | ---------------------: |
-| Tessuto    |               1,4 |                  68 |                   5–90 |
-| Pelle      |               1,2 |                  38 |                  20–88 |
-| Occhi      |               1,6 |                  72 |                  15–72 |
-| Capelli    |               1,3 |                  55 |                   5–82 |
+Non è stata identificata una calibrazione che giustifichi i parametri correnti
+come correzione dal colore a schermo al colore fisico.
+Queste trasformazioni non sono la linearizzazione sRGB.
 
-Stato: **euristica non calibrata**. Non esiste nel repository un dataset che giustifichi tali curve o range.
+Separarle dalle conversioni. Un eventuale mantenimento temporaneo serve
+al confronto con la baseline e deve restare esplicitamente sperimentale.
 
-### Validazione biologica
+### Range biologici
 
-La baseline definisce range HSL distinti per pelle, occhi e capelli:
+BIO_RANGES contiene intervalli HSL scelti manualmente.
+validateBioColor controlla l'appartenenza a questi intervalli;
+non dimostra che un colore sia biologicamente plausibile.
 
-| Componente |   Hue | Saturazione | Lightness |
-| ---------- | ----: | ----------: | --------: |
-| Pelle      |  0–70 |        2–38 |     20–88 |
-| Occhi      | 0–360 |        3–72 |     15–72 |
-| Capelli    |  0–90 |        5–55 |      5–82 |
+Distinguere:
 
-I limiti sono inclusivi. `validateBioColor` può applicare una funzione di normalizzazione prima del confronto con i range.
+1. formato valido;
+2. coordinate nel dominio della rappresentazione;
+3. appartenenza a un intervallo euristico;
+4. plausibilità supportata da dati.
 
-Il tipo `BioComponent` limita il contratto TypeScript a `skin`, `eyes` e `hair`. Un valore sconosciuto ricevuto a runtime restituisce `false`.
+Correggere inoltre il controllo runtime dei componenti, includendo
+chiavi ereditate come toString e constructor nei casi di regressione.
 
-La funzione è disponibile nel dominio e coperta da test, ma non è ancora collegata alla UI.
+## Profilo
 
-Stato: **euristica non validata**. I range non derivano attualmente da misure strumentali, dataset annotati o fonti primarie.
+### Discontinuità della hue
 
-### Analisi del profilo
+La formula corrente usa (hSk - 22) / 22 per il segnale della pelle.
+Questa operazione non rispetta la circolarità della hue.
 
-Il profilo produce tre categorie:
+Caso da trasformare in regressione, con occhi e capelli #808080
+e riflessi predefiniti:
 
-- `undertone`: warm, cool, neutral;
-- `depth`: light, deep;
-- `intensity`: low, medium, high.
+| Pelle   | Sottotono corrente | Stagione corrente |
+| ------- | ------------------ | ----------------- |
+| #b98c8d | warm               | spring-light      |
+| #b98d8c | cool               | summer-soft       |
 
-La baseline combina HSL normalizzato di pelle, occhi e capelli con pesi, soglie e correzioni manuali. I riflessi selezionati dall'utente applicano correzioni discrete la cui influenza varia in funzione della distanza dalle soglie di classificazione.
+I due input differiscono di un livello in due canali RGB.
+Il risultato dipende dall'attraversamento di 0°/360°.
 
-Parametri correnti:
+Una distanza angolare può correggere il trattamento della coordinata,
+ma non basta a validare un modello del sottotono.
 
-- il contributo dei capelli al sottotono è dinamico e dipende da riflettività stimata e volume;
-- il peso massimo dei capelli è `0.50`;
-- il peso della pelle è `0.50 - hairW * 0.30`;
-- il peso degli occhi è `0.15`;
-- il risultato del sottotono viene diviso per la somma dei pesi effettivi;
-- soglia warm: `utScore > 0.12`;
-- soglia cool: `utScore < -0.18`;
-- depth: combinazione di lightness 55% pelle, 35% capelli e 10% occhi;
-- soglia deep: `depthScore > 48`;
-- intensità: 50% occhi, 30% capelli e 20% pelle, con bonus di contrasto pari al 15% del valore normalizzato;
-- intensità alta: `intScore > 55`;
-- intensità bassa: `intScore < 30`.
+### Grandezze e categorie
 
-Stato: **euristica non validata**.
+Prima dell'estrazione:
 
-### Season detection
+- definire operativamente cosa intendiamo per sottotono, profondità e intensità;
+- distinguere coordinate del colore, punteggi e categorie;
+- rivedere hairReflectivity, che non misura la riflettanza fisica;
+- verificare l'effetto delle normalizzazioni e del volume dei capelli;
+- giustificare o confinare soglie, pesi e correzioni;
+- rappresentare casi fuori dominio e ambiguità senza inventare probabilità.
 
-Le tre categorie vengono mappate deterministicamente su un modello a 12 stagioni. L'algoritmo restituisce una sola stagione, senza probabilità, margine o alternativa.
+Il mapping a 12 stagioni resta una tassonomia estetica non validata
+per l'implementazione corrente.
 
-Stato: **modello di prodotto non validato**. Non è stata identificata nel repository una fonte primaria che dimostri questa specifica mappatura.
+## Blocchi successivi
 
-### Anchor biologico
+Fit, armonie, pesi dei capi e ranking richiedono ancora revisione.
+Rotazioni HSL, penalità manuali e ricerca di colori alternativi
+non dimostrano da sole armonia o preferenza.
 
-Quando non esistono capi fissi, l'ancora biologica usa una media circolare delle hue:
+Prima di modificarli, distinguere il fenomeno da prevedere:
+differenza cromatica, compatibilità col profilo, preferenza personale
+o giudizio estetico di osservatori.
 
-- pelle 50%;
-- capelli 40%;
-- occhi 10%.
+## Protocollo di verifica per ogni blocco
 
-La generazione può inoltre scegliere un'ancora da un set manuale per stagione.
+### Correttezza implementativa
 
-Stato: **euristica non validata**.
+- Confrontare le formule con riferimenti primari.
+- Dichiarare unità, dominio e tolleranze.
+- Verificare casi limite, acromatici e circolarità degli angoli.
+- Gestire esplicitamente gli input non validi.
+- Verificare determinismo e seed dove applicabili.
 
-### Fit rispetto al profilo
+### Confronto con la baseline
 
-Il fit del colore usa penalità discrete per:
+- Conservare fixture minime che descrivano il comportamento precedente.
+- Aggiungere una regressione per ogni errore corretto.
+- Distinguere cambiamenti intenzionali e regressioni.
+- Non usare gli output precedenti come prova di correttezza scientifica.
 
-- mismatch caldo/freddo;
-- mismatch di profondità;
-- mismatch di intensità;
-- casi speciali per bianco, nero, neutri e jeans;
-- riduzione della penalità in funzione del peso visivo del capo.
+### Validazione empirica
 
-Output corrente: livello intero da 0 a 3.
+Quando una conclusione dipende da persone o misure:
 
-Stato: **euristica non calibrata**.
+- definire prima il target osservabile;
+- documentare acquisizione, provenienza e limiti dei dati;
+- separare etichette degli esperti, preferenze e misure;
+- conservare il valutatore quando serva misurare l'accordo;
+- confrontare baseline e candidato sugli stessi dati congelati;
+- scegliere metriche e criteri prima del confronto finale;
+- riportare incertezza, errori e limiti di generalizzazione.
 
-### Fit tra colori
+In assenza di dati sufficienti, il blocco può essere verificato
+nell'implementazione ma resta empiricamente non validato.
 
-La baseline confronta coppie di colori e penalizza:
+## Acquisizione e dati
 
-- neutri scuri quasi indistinguibili;
-- stessa famiglia di hue con saturazioni molto diverse;
-- coppie caldo/freddo considerate in conflitto.
+Un campione fotografico dipende da illuminazione, camera, esposizione,
+bilanciamento del bianco, geometria e gestione del colore.
 
-Il problema viene assegnato al capo con peso minore.
+Registrare l'origine dell'input e i metadati disponibili.
+Non attribuire affidabilità numerica senza un metodo che la giustifichi.
 
-Stato: **regole manuali**. Non implementano direttamente un modello psicofisico pubblicato.
+Il protocollo fotografico va definito prima di validare il profilo.
+Luce uniforme, assenza di filtri e geometria ripetibile sono accorgimenti
+da valutare, non una garanzia automatica di misura calibrata.
 
-### Armonie
+Usare fixture sintetiche o dati con provenienza e licenza compatibili.
+Non inserire immagini identificabili o dati personali senza un processo esplicito.
 
-Le candidate palette sono generate con rotazioni HSL nominali per:
+## Fondamenti da introdurre quando necessari
 
-- mono;
-- analog;
-- complementary;
-- split complementary;
-- triad;
-- tetrad;
-- neutral;
-- earth;
-- pastel;
-- deep.
+Per le misure colorimetriche valutare sRGB linearizzato, XYZ, CIELAB
+e differenze cromatiche con riferimenti di test.
 
-Stato: **costruzione geometrica tradizionale su HSL**, non un modello dimostrato di preferenza o armonia.
+Documentare white point e condizioni pertinenti.
+Le conversioni devono essere coerenti lungo tutta la pipeline.
 
-### Pesi dei capi
+Non trasferire automaticamente in un nuovo spazio le soglie HSL precedenti.
+Uno spazio più appropriato non valida da solo il modello di raccomandazione.
 
-I capi hanno pesi manuali, normalizzati rispetto a quelli presenti. Sono presenti correzioni per occlusione degli strati e vicinanza al viso.
+## Evoluzione del modello
 
-Stato: **euristica di prodotto**.
+Le modifiche sostanziali al comportamento richiedono un identificatore
+del modello e un confronto riproducibile, distinti dalla versione dell'app.
 
-### Correzione automatica
-
-Un colore problematico viene modificato sequenzialmente su hue, lightness, saturazione e contrasto. Se non viene trovato un risultato accettabile viene usato un neutro di fallback.
-
-Stato: **algoritmo di ricerca locale euristico**.
-
-## Problemi scientifici prioritari
-
-### Uso di HSL
-
-HSL è utile per controlli UI, ma non è percettivamente uniforme e non è una base sufficiente per misurare differenze, similarità o armonia. Il motore deve valutare almeno CIELAB/ΔE00 e uno spazio di apparenza o uniforme moderno, senza assumere a priori quale produca il miglior modello.
-
-### Colore fotografico
-
-Un valore sRGB campionato da fotografia dipende da:
-
-- illuminante;
-- bilanciamento del bianco;
-- esposizione;
-- tone mapping e HDR;
-- camera e pipeline computazionale;
-- angolo, distanza e riflessi;
-- profilo colore dell'immagine;
-- area anatomica campionata.
-
-Non deve essere trattato come misura assoluta della riflettanza della pelle, degli occhi o dei capelli.
-
-### “Sottotono”
-
-Il termine deve essere trasformato in una definizione operativa misurabile. Non assumere che una singola hue HSL della pelle rappresenti un sottotono stabile.
-
-### Stagioni
-
-La classificazione stagionale va trattata come tassonomia estetica. La validazione deve chiarire se il target è:
-
-- accordo con analisti umani;
-- preferenza percepita degli utenti;
-- effetto visivo misurabile sulla percezione del volto;
-- coerenza interna di palette;
-- combinazione dei precedenti.
-
-Questi target non sono equivalenti.
-
-## Contratto target
-
-### Tipi concettuali
-
-```ts
-type ColorSource = "manual" | "photo" | "dataset" | "instrument";
-
-type ColorMeasurement = {
-  source: ColorSource;
-  srgb?: [number, number, number];
-  xyzD65?: [number, number, number];
-  labD65?: [number, number, number];
-  metadata: AcquisitionMetadata;
-  uncertainty: number | null;
-};
-
-type ModelResult<T> = {
-  value: T;
-  score: number;
-  confidence: number | null;
-  alternatives: Array<{ value: T; score: number }>;
-  reasons: Reason[];
-  warnings: Warning[];
-  modelVersion: string;
-};
-```
-
-I nomi sono indicativi. La rappresentazione finale va definita durante la migrazione TypeScript.
-
-## Pipeline target
-
-```text
-input
-→ validazione e metadati
-→ conversione colorimetrica
-→ estrazione di feature continue
-→ stima del profilo con incertezza
-→ scoring dei colori
-→ scoring dell'armonia
-→ generazione candidati
-→ ranking
-→ spiegazione e warnings
-```
-
-## Ipotesi da verificare
-
-| ID   | Ipotesi                                                                                      | Stato corrente                                        |
-| ---- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| H-01 | Curve fisse HSL possono correggere screen-to-fabric e screen-to-biology                      | non supportata                                        |
-| H-02 | Pelle, occhi e capelli determinano in modo stabile tre assi discreti                         | non supportata                                        |
-| H-03 | I pesi dinamici del profilo e i pesi 50/40/10 dell'anchor biologico migliorano la previsione | arbitraria                                            |
-| H-04 | La mappa 3 assi → 12 stagioni riflette un target osservabile                                 | non validata                                          |
-| H-05 | Le attuali soglie di fit predicono preferenza o compatibilità                                | non validata                                          |
-| H-06 | Le rotazioni HSL producono combinazioni percepite come armoniose                             | parzialmente plausibile, implementazione non validata |
-| H-07 | I pesi visuali dei capi migliorano il ranking                                                | ipotesi di prodotto                                   |
-| H-08 | Un colore fotografico non calibrato è sufficiente per il profilo                             | presumibilmente fragile                               |
-
-## Versionamento
-
-Ogni modifica scientifica deve incrementare una versione del modello distinta dalla versione dell'app. I risultati persistiti devono registrare tale versione per consentire confronti e migrazioni.
+Non presentare come scientificamente accurato un risultato privo
+delle evidenze necessarie.
